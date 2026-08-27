@@ -24,6 +24,8 @@ import {
   Palette,
   Edit3,
   Sliders,
+  Lock,
+  AlertTriangle,
 } from 'lucide-react';
 import { AdminMember, AuthorizedUser } from '../types';
 import { AdminMemberModal } from './AdminMemberModal';
@@ -35,6 +37,12 @@ import {
   DEFAULT_PRESET_RANKS,
   groupRanksByTier,
 } from '../utils/ranksConfig';
+import {
+  canActorManageStaffMember,
+  removeStaffMemberAndRevokePermissions,
+  isOwnerUser,
+  getUserAuthorityLevel,
+} from '../utils/auth';
 
 interface AdminDirectoryProps {
   currentUser: AuthorizedUser | null;
@@ -73,6 +81,7 @@ export const AdminDirectory: React.FC<AdminDirectoryProps> = ({
   const [editingAdmin, setEditingAdmin] = useState<AdminMember | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copiedDiscordSummary, setCopiedDiscordSummary] = useState(false);
+  const [actionFeedback, setActionFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   // Check if current user has edit permission (Owner or Authorized supervisors)
   const canManageStaff = currentUser !== null;
@@ -91,6 +100,16 @@ export const AdminDirectory: React.FC<AdminDirectoryProps> = ({
 
   // Quick Rank Change
   const handleQuickRankChange = (adminId: string, newRank: string) => {
+    const targetStaff = staffList.find((s) => s.id === adminId);
+    if (!targetStaff) return;
+
+    const check = canActorManageStaffMember(currentUser, targetStaff, staffList, activeRanks);
+    if (!check.allowed) {
+      setActionFeedback({ type: 'error', text: check.reason || 'لا يمكنك تغيير رتبة إداري برتبة مساوية أو أعلى منك.' });
+      setTimeout(() => setActionFeedback(null), 4000);
+      return;
+    }
+
     const dedicatedColor = getRankColor(newRank, rankColors, activeRanks);
     const updated = staffList.map((admin) => {
       if (admin.id === adminId) {
@@ -104,6 +123,8 @@ export const AdminDirectory: React.FC<AdminDirectoryProps> = ({
       return admin;
     });
     onUpdateStaffList(updated);
+    setActionFeedback({ type: 'success', text: `تم تغيير رتبة (${targetStaff.name}) إلى [${newRank}] بنجاح!` });
+    setTimeout(() => setActionFeedback(null), 3000);
   };
 
   // Add / Edit Save Handler
@@ -117,13 +138,36 @@ export const AdminDirectory: React.FC<AdminDirectoryProps> = ({
       updated = [savedAdmin, ...staffList];
     }
     onUpdateStaffList(updated);
+    setActionFeedback({ type: 'success', text: `تم حفظ بيانات الإداري (${savedAdmin.name}) بنجاح!` });
+    setTimeout(() => setActionFeedback(null), 3000);
   };
 
-  // Delete Handler
+  // Delete Handler with Hierarchy Check & Permission Revocation
   const handleDeleteAdmin = (adminId: string, adminName: string) => {
-    if (window.confirm(`هل أنت متأكد من حذف الإداري (${adminName}) من القائمة؟`)) {
-      const updated = staffList.filter((a) => a.id !== adminId);
-      onUpdateStaffList(updated);
+    const targetStaff = staffList.find((s) => s.id === adminId);
+    if (!targetStaff) return;
+
+    const check = canActorManageStaffMember(currentUser, targetStaff, staffList, activeRanks);
+    if (!check.allowed) {
+      setActionFeedback({ type: 'error', text: check.reason || 'لا تملك صلاحيات كافية لإزالة هذا الإداري.' });
+      setTimeout(() => setActionFeedback(null), 4000);
+      return;
+    }
+
+    if (
+      window.confirm(
+        `هل أنت متأكد من إزالة الإداري (${adminName}) من طاقم الإدارة وسحب كامل صلاحياته الإدارية؟\n\n(ملاحظة: لا يمكن إزالة الإداري إلا من قِبَل المالك الأساسي أو رتبة أعلى منه).`
+      )
+    ) {
+      const res = removeStaffMemberAndRevokePermissions(adminId, currentUser, staffList, activeRanks);
+      if (res.success) {
+        onUpdateStaffList(res.updatedStaffList);
+        setActionFeedback({ type: 'success', text: res.message });
+        setTimeout(() => setActionFeedback(null), 4500);
+      } else {
+        setActionFeedback({ type: 'error', text: res.message });
+        setTimeout(() => setActionFeedback(null), 4500);
+      }
     }
   };
 
@@ -138,12 +182,16 @@ export const AdminDirectory: React.FC<AdminDirectoryProps> = ({
   const handleCopyDiscordSummary = () => {
     if (staffList.length === 0) return;
     let md = `👑 **قائمة طاقم إدارة سيرفر Majan State ونقاط النشاط** 👑\n━━━━━━━━━━━━━━━━━━━━\n`;
+    
+    // Sort by points desc
     const sorted = [...staffList].sort((a, b) => (b.points || 0) - (a.points || 0));
-    sorted.forEach((admin, idx) => {
+    
+    sorted.forEach((member, idx) => {
       const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : '▫️';
-      md += `${medal} **${admin.name}** | الرتبة: \`${admin.rank}\` | النقاط: **${admin.points || 0} نقطة** ${admin.discordTag ? `(${admin.discordTag})` : ''}\n`;
+      md += `${medal} **#${idx + 1}** ${member.name} (${member.discordTag || '@staff'}) — **${member.rank}** | ⚡ **${member.points || 0} نقطة**\n`;
     });
-    md += `\n📅 *تم التحديث بتاريخ: ${new Date().toLocaleDateString('ar-EG')}*`;
+
+    md += `\n━━━━━━━━━━━━━━━━━━━━\n📊 تم التحديث تلقائياً من نظام الإدارة المعتمد`;
 
     navigator.clipboard.writeText(md);
     setCopiedDiscordSummary(true);
@@ -349,6 +397,33 @@ export const AdminDirectory: React.FC<AdminDirectoryProps> = ({
 
       {/* Main Content Body */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 relative z-10">
+
+        {/* Action / Hierarchy Alert Banner */}
+        {actionFeedback && (
+          <div className="mb-6 relative z-30 animate-fadeIn">
+            <div
+              className={`p-3.5 rounded-2xl flex items-center gap-3 border shadow-lg ${
+                actionFeedback.type === 'success'
+                  ? 'bg-emerald-950/80 border-emerald-500/40 text-emerald-300'
+                  : 'bg-rose-950/80 border-rose-500/40 text-rose-300'
+              }`}
+            >
+              {actionFeedback.type === 'success' ? (
+                <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+              ) : (
+                <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+              )}
+              <p className="text-xs sm:text-sm font-bold flex-1">{actionFeedback.text}</p>
+              <button
+                type="button"
+                onClick={() => setActionFeedback(null)}
+                className="text-xs font-bold px-2.5 py-1 rounded-lg bg-black/30 hover:bg-black/50 transition cursor-pointer"
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
+        )}
         
         {/* Top 4 Summary Cards (Total Staff + Top 3 Admins by Points) */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 sm:gap-4 mb-8">
@@ -700,122 +775,152 @@ export const AdminDirectory: React.FC<AdminDirectoryProps> = ({
                     </div>
 
                     {/* Rank & Quick Rank Selector */}
-                    <div className="mb-4 flex items-center justify-between gap-2 p-2.5 rounded-2xl bg-[#141122] border border-zinc-800/80">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setTargetedRankForCustomization(admin.rank);
-                            setIsRankCustomizationOpen(true);
-                          }}
-                          className="px-3 py-1 rounded-xl text-xs font-black border truncate transition-all hover:scale-105 cursor-pointer flex items-center gap-1.5"
-                          style={badgeStyle}
-                          title="انقر لتعديل وتخصيص اسم ولون هذه الرتبة"
-                        >
-                          <span>{admin.rank}</span>
-                          <Edit3 className="w-3 h-3 opacity-70" />
-                        </button>
-                      </div>
+                    {(() => {
+                      const manageCheck = canActorManageStaffMember(currentUser, admin, staffList, activeRanks);
+                      const canManageThis = manageCheck.allowed;
+                      return (
+                        <>
+                          <div className="mb-4 flex items-center justify-between gap-2 p-2.5 rounded-2xl bg-[#141122] border border-zinc-800/80">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setTargetedRankForCustomization(admin.rank);
+                                  setIsRankCustomizationOpen(true);
+                                }}
+                                className="px-3 py-1 rounded-xl text-xs font-black border truncate transition-all hover:scale-105 cursor-pointer flex items-center gap-1.5"
+                                style={badgeStyle}
+                                title="انقر لتعديل وتخصيص اسم ولون هذه الرتبة"
+                              >
+                                <span>{admin.rank}</span>
+                                <Edit3 className="w-3 h-3 opacity-70" />
+                              </button>
+                            </div>
 
-                      {/* Quick Rank Change Dropdown */}
-                      <select
-                        value={admin.rank}
-                        onChange={(e) => handleQuickRankChange(admin.id, e.target.value)}
-                        className="text-[11px] font-bold bg-[#0a0812] border border-zinc-700 rounded-lg px-2 py-1 text-zinc-300 focus:border-orange-500 outline-none cursor-pointer"
-                        title="تغيير رتبة الإداري مباشرة"
-                      >
-                        {activeTiers.map((tier) => (
-                          <optgroup key={tier.id} label={tier.title}>
-                            {tier.ranks.map((r) => (
-                              <option key={r.id} value={r.name}>
-                                #{r.number} - {r.name}
-                              </option>
-                            ))}
-                          </optgroup>
-                        ))}
-                      </select>
-                    </div>
+                            {/* Quick Rank Change Dropdown */}
+                            <select
+                              value={admin.rank}
+                              disabled={!canManageThis}
+                              onChange={(e) => handleQuickRankChange(admin.id, e.target.value)}
+                              className={`text-[11px] font-bold bg-[#0a0812] border rounded-lg px-2 py-1 text-zinc-300 outline-none ${
+                                canManageThis
+                                  ? 'border-zinc-700 focus:border-orange-500 cursor-pointer'
+                                  : 'border-zinc-800/80 opacity-60 cursor-not-allowed'
+                              }`}
+                              title={canManageThis ? 'تغيير رتبة الإداري مباشرة' : (manageCheck.reason || 'صلاحيات غير كافية')}
+                            >
+                              {activeTiers.map((tier) => (
+                                <optgroup key={tier.id} label={tier.title}>
+                                  {tier.ranks.map((r) => (
+                                    <option key={r.id} value={r.name}>
+                                      #{r.number} - {r.name}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              ))}
+                            </select>
+                          </div>
 
-                    {/* Notes / Duties if present */}
-                    {admin.notes && (
-                      <div className="mb-4 p-2.5 rounded-xl bg-[#110e1c] border border-zinc-800 text-[11px] text-zinc-400 leading-relaxed">
-                        <strong className="text-zinc-300 block mb-0.5">المهام / الملاحظات:</strong>
-                        {admin.notes}
-                      </div>
-                    )}
-                  </div>
+                          {/* Notes / Duties if present */}
+                          {admin.notes && (
+                            <div className="mb-4 p-2.5 rounded-xl bg-[#110e1c] border border-zinc-800 text-[11px] text-zinc-400 leading-relaxed">
+                              <strong className="text-zinc-300 block mb-0.5">المهام / الملاحظات:</strong>
+                              {admin.notes}
+                            </div>
+                          )}
 
-                  {/* Points Counter & Control Bar */}
-                  <div className="pt-3 border-t border-zinc-800/80 flex items-center justify-between gap-2">
-                    
-                    {/* Points counter */}
-                    <div className="flex items-center gap-2">
-                      <div className="flex flex-col">
-                        <span className="text-[10px] text-zinc-400 font-bold">نقاط النشاط:</span>
-                        <span className="text-lg font-black text-amber-400 tracking-tight">
-                          {admin.points || 0} <span className="text-[10px] text-zinc-500">نقطة</span>
-                        </span>
-                      </div>
-                    </div>
+                          {/* Points Counter & Control Bar */}
+                          <div className="pt-3 border-t border-zinc-800/80 flex items-center justify-between gap-2">
+                            {/* Points counter */}
+                            <div className="flex items-center gap-2">
+                              <div className="flex flex-col">
+                                <span className="text-[10px] text-zinc-400 font-bold">نقاط النشاط:</span>
+                                <span className="text-lg font-black text-amber-400 tracking-tight">
+                                  {admin.points || 0} <span className="text-[10px] text-zinc-500">نقطة</span>
+                                </span>
+                              </div>
+                            </div>
 
-                    {/* Fast Points Adjust buttons */}
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleAdjustPoints(admin.id, 1)}
-                        className="px-2 py-1 rounded-lg bg-green-500/15 hover:bg-green-500/25 border border-green-500/30 text-green-400 text-xs font-bold transition cursor-pointer"
-                        title="إضافة نقطة (+1)"
-                      >
-                        +1
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleAdjustPoints(admin.id, 5)}
-                        className="px-2 py-1 rounded-lg bg-green-500/20 hover:bg-green-500/30 border border-green-500/40 text-green-300 text-xs font-black transition cursor-pointer"
-                        title="إضافة 5 نقاط (+5)"
-                      >
-                        +5
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleAdjustPoints(admin.id, -1)}
-                        className="px-2 py-1 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 text-xs font-bold transition cursor-pointer"
-                        title="خصم نقطة (-1)"
-                      >
-                        -1
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleAdjustPoints(admin.id, -5)}
-                        className="px-2 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-300 text-xs font-black transition cursor-pointer"
-                        title="خصم 5 نقاط (-5)"
-                      >
-                        -5
-                      </button>
-                    </div>
+                            {/* Fast Points Adjust buttons */}
+                            {canManageThis ? (
+                              <div className="flex items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleAdjustPoints(admin.id, 1)}
+                                  className="px-2 py-1 rounded-lg bg-green-500/15 hover:bg-green-500/25 border border-green-500/30 text-green-400 text-xs font-bold transition cursor-pointer"
+                                  title="إضافة نقطة (+1)"
+                                >
+                                  +1
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAdjustPoints(admin.id, 5)}
+                                  className="px-2 py-1 rounded-lg bg-green-500/20 hover:bg-green-500/30 border border-green-500/40 text-green-300 text-xs font-black transition cursor-pointer"
+                                  title="إضافة 5 نقاط (+5)"
+                                >
+                                  +5
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAdjustPoints(admin.id, -1)}
+                                  className="px-2 py-1 rounded-lg bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-400 text-xs font-bold transition cursor-pointer"
+                                  title="خصم نقطة (-1)"
+                                >
+                                  -1
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAdjustPoints(admin.id, -5)}
+                                  className="px-2 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-300 text-xs font-black transition cursor-pointer"
+                                  title="خصم 5 نقاط (-5)"
+                                >
+                                  -5
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="text-[10px] text-zinc-500 flex items-center gap-1 font-medium bg-zinc-900/60 px-2 py-1 rounded-lg border border-zinc-800/60" title={manageCheck.reason}>
+                                <Lock className="w-3 h-3 text-zinc-600" />
+                                <span>محمي</span>
+                              </div>
+                            )}
 
-                    {/* Edit & Delete Action Buttons */}
-                    <div className="flex items-center gap-1 mr-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingAdmin(admin);
-                          setIsModalOpen(true);
-                        }}
-                        className="p-1.5 rounded-lg bg-zinc-800 hover:bg-orange-500/20 text-zinc-300 hover:text-orange-400 border border-zinc-700 transition cursor-pointer"
-                        title="تعديل كامل البيانات واللون"
-                      >
-                        <Edit className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteAdmin(admin.id, admin.name)}
-                        className="p-1.5 rounded-lg bg-zinc-800 hover:bg-red-500/20 text-zinc-400 hover:text-red-400 border border-zinc-700 transition cursor-pointer"
-                        title="حذف من الطاقم"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                            {/* Edit & Delete Action Buttons */}
+                            <div className="flex items-center gap-1 mr-1">
+                              {canManageThis ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingAdmin(admin);
+                                      setIsModalOpen(true);
+                                    }}
+                                    className="p-1.5 rounded-lg bg-zinc-800 hover:bg-orange-500/20 text-zinc-300 hover:text-orange-400 border border-zinc-700 transition cursor-pointer"
+                                    title="تعديل كامل البيانات واللون"
+                                  >
+                                    <Edit className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteAdmin(admin.id, admin.name)}
+                                    className="p-1.5 rounded-lg bg-zinc-800 hover:bg-red-500/20 text-zinc-400 hover:text-red-400 border border-zinc-700 transition cursor-pointer"
+                                    title="إزالة الإداري وسحب الصلاحيات"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </>
+                              ) : (
+                                <div
+                                  className="p-1.5 rounded-lg bg-zinc-900/80 text-zinc-600 border border-zinc-800/80 flex items-center justify-center cursor-not-allowed"
+                                  title={manageCheck.reason || 'لا تملك صلاحيات أعلى من هذا الإداري'}
+                                >
+                                  <Lock className="w-3.5 h-3.5 text-zinc-500" />
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </>
+                      );
+                    })()}
 
                   </div>
                 </div>
@@ -958,27 +1063,44 @@ export const AdminDirectory: React.FC<AdminDirectoryProps> = ({
 
                         {/* Actions */}
                         <td className="p-4 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingAdmin(admin);
-                                setIsModalOpen(true);
-                              }}
-                              className="p-1.5 rounded-lg bg-zinc-800 hover:bg-orange-500/20 text-zinc-300 hover:text-orange-400 border border-zinc-700"
-                              title="تعديل"
-                            >
-                              <Edit className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteAdmin(admin.id, admin.name)}
-                              className="p-1.5 rounded-lg bg-zinc-800 hover:bg-red-500/20 text-zinc-400 hover:text-red-400 border border-zinc-700"
-                              title="حذف"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
+                          {(() => {
+                            const manageCheck = canActorManageStaffMember(currentUser, admin, staffList, activeRanks);
+                            const canManageThis = manageCheck.allowed;
+                            return (
+                              <div className="flex items-center justify-center gap-1.5">
+                                {canManageThis ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingAdmin(admin);
+                                        setIsModalOpen(true);
+                                      }}
+                                      className="p-1.5 rounded-lg bg-zinc-800 hover:bg-orange-500/20 text-zinc-300 hover:text-orange-400 border border-zinc-700"
+                                      title="تعديل"
+                                    >
+                                      <Edit className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteAdmin(admin.id, admin.name)}
+                                      className="p-1.5 rounded-lg bg-zinc-800 hover:bg-red-500/20 text-zinc-400 hover:text-red-400 border border-zinc-700"
+                                      title="إزالة وسحب الصلاحيات"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <div
+                                    className="p-1.5 rounded-lg bg-zinc-900/80 text-zinc-600 border border-zinc-800/80 flex items-center justify-center cursor-not-allowed"
+                                    title={manageCheck.reason || 'لا تملك صلاحيات أعلى من هذا الإداري'}
+                                  >
+                                    <Lock className="w-3.5 h-3.5 text-zinc-500" />
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </td>
                       </tr>
                     );

@@ -188,6 +188,40 @@ export function getRankColor(
   return '#F97316';
 }
 
+/**
+ * Returns the numerical level (1 to 25) of a staff rank. Higher number = Higher tier in administration.
+ */
+export function getRankNumberByName(rankName: string, ranksList?: PresetRankItem[]): number {
+  if (!rankName) return 0;
+  const clean = rankName.trim().toLowerCase();
+
+  // Check if it's the ultimate owner
+  if (clean.includes('owner') || clean.includes('مالك') || clean.includes('dofy') || clean.includes('مؤسس')) {
+    return 30; // Above all 25 ranks
+  }
+
+  const list = ranksList && ranksList.length > 0 ? ranksList : DEFAULT_PRESET_RANKS;
+  const found = list.find(
+    (r) =>
+      r.name.toLowerCase() === clean ||
+      r.defaultName.toLowerCase() === clean ||
+      r.id.toLowerCase() === clean
+  );
+
+  if (found) {
+    return found.number;
+  }
+
+  // Fallback pattern matching
+  for (const r of DEFAULT_PRESET_RANKS) {
+    if (clean.includes(r.defaultName.toLowerCase()) || clean.includes(r.name.toLowerCase())) {
+      return r.number;
+    }
+  }
+
+  return 1; // Default entry-level rank
+}
+
 export function groupRanksByTier(ranks: PresetRankItem[]): ManagementTierGroup[] {
   return [
     {

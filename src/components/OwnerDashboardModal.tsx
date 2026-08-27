@@ -254,10 +254,10 @@ export const OwnerDashboardModal: React.FC<OwnerDashboardModalProps> = ({
   };
 
   const handleRejectRequest = (reqId: string) => {
-    rejectActivationRequest(reqId, 'Dofy');
+    deleteActivationRequest(reqId);
     refreshRequests();
-    onNotify('تم رفض طلب التفعيل');
-    setFeedback({ type: 'success', text: 'تم رفض الطلب بنجاح.' });
+    onNotify('تم رفض وإخفاء طلب التفعيل');
+    setFeedback({ type: 'success', text: 'تم رفض وإزالة الطلب بنجاح.' });
   };
 
   const handleDeleteRequest = (reqId: string) => {
@@ -265,17 +265,14 @@ export const OwnerDashboardModal: React.FC<OwnerDashboardModalProps> = ({
     refreshRequests();
   };
 
-  const handleResetAllUsersToOwner = () => {
-    if (
-      window.confirm(
-        'هل أنت متأكد من رغبتك في إزالة جميع الحسابات والرتب الإدارية وتصفير القائمة (مع الاحتفاظ بحسابك الأساسي Dofy فقط)؟\nستتمكن بعد ذلك من إعطاء الرتب لكل شخص بنفسك عبر النظام الجديد.'
-      )
-    ) {
-      resetUsersToOwnerOnly();
-      onRefreshUsers();
-      const msg = 'تم تصفير وإزالة جميع الإداريين بنجاح! لم يتبق سوى حساب المالك Dofy.';
-      setFeedback({ type: 'success', text: msg });
-      onNotify(msg);
+  const formatReqDate = (dateStr?: string) => {
+    if (!dateStr) return 'الآن';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return 'الآن';
+      return d.toLocaleString('ar-SA');
+    } catch {
+      return 'الآن';
     }
   };
 
@@ -693,250 +690,218 @@ export const OwnerDashboardModal: React.FC<OwnerDashboardModalProps> = ({
         <div className="p-5 sm:p-6 overflow-y-auto flex-1 custom-scrollbar space-y-4">
           
           {/* ================= TAB 1: ACTIVATION REQUESTS ================= */}
-          {activeTab === 'requests' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
-                    <span>طلبات التفعيل والانضمام للإدارة</span>
-                    <span className="text-xs font-bold text-zinc-400">
-                      ({requests.length} طلب إجمالي)
-                    </span>
-                  </h3>
-                  <p className="text-xs text-zinc-400">
-                    أي شخص يدخل كود التفعيل أو يطلب رتبة يظهر طلبه هنا مع كافة بياناته للموافقة المباشرة
-                  </p>
+          {activeTab === 'requests' && (() => {
+            const displayedRequests = requests.filter((r) => r.status !== 'rejected');
+            return (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm sm:text-base font-black text-white flex items-center gap-2">
+                      <span>طلبات التفعيل والانضمام للإدارة</span>
+                      <span className="text-xs font-bold text-zinc-400">
+                        ({displayedRequests.length} طلب نشط)
+                      </span>
+                    </h3>
+                    <p className="text-xs text-zinc-400">
+                      أي شخص يدخل كود التفعيل أو يطلب رتبة يظهر طلبه هنا مع كافة بياناته للموافقة المباشرة
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={refreshRequests}
+                    className="px-3 py-1.5 rounded-xl bg-[#141022] hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>تحديث الطلبات</span>
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={refreshRequests}
-                  className="px-3 py-1.5 rounded-xl bg-[#141022] hover:bg-orange-500/20 text-orange-400 border border-orange-500/30 text-xs font-bold flex items-center gap-1.5 transition cursor-pointer"
-                >
-                  <RefreshCw className="w-3.5 h-3.5" />
-                  <span>تحديث الطلبات</span>
-                </button>
+
+                {displayedRequests.length === 0 ? (
+                  <div className="p-10 text-center bg-[#120f1f] border border-zinc-800 rounded-3xl text-zinc-400 space-y-2">
+                    <Send className="w-10 h-10 text-zinc-600 mx-auto" />
+                    <p className="text-sm font-bold text-zinc-300">لا توجد طلبات تفعيل حالياً</p>
+                    <p className="text-xs text-zinc-500">
+                      عندما يقوم أي عضو بإرسال كود التفعيل من زر "كود التفعيل" في شريط الموقع، سيظهر طلبه هنا فوراً.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3.5">
+                    {displayedRequests.map((req) => {
+                      const isPending = req.status === 'pending';
+                      const isApproved = req.status === 'approved';
+
+                      return (
+                        <div
+                          key={req.id}
+                          className={`p-4 sm:p-5 rounded-2xl border transition flex flex-col md:flex-row md:items-center justify-between gap-4 ${
+                            isPending
+                              ? 'bg-[#151024] border-orange-500/50 shadow-[0_0_25px_rgba(249,115,22,0.15)]'
+                              : isApproved
+                              ? 'bg-[#0f1712] border-emerald-500/40 opacity-80'
+                              : 'bg-[#1a0f12] border-red-500/30 opacity-70'
+                          }`}
+                        >
+                          {/* Request Info */}
+                          <div className="space-y-2 min-w-0 flex-1">
+                            <div className="flex items-center gap-2.5 flex-wrap">
+                              <span className="text-sm sm:text-base font-black text-white">
+                                {req.name}
+                              </span>
+
+                              {req.discordTag && (
+                                <span className="text-xs px-2.5 py-0.5 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono">
+                                  @{req.discordTag}
+                                </span>
+                              )}
+
+                              {req.age && (
+                                <span className="text-xs px-2 py-0.5 rounded-lg bg-orange-500/15 text-orange-300 border border-orange-500/30 font-bold">
+                                  العمر: {req.age} سنة
+                                </span>
+                              )}
+
+                              {/* Status Badge */}
+                              {isPending ? (
+                                <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40 flex items-center gap-1 animate-pulse">
+                                  <Clock className="w-3 h-3" /> بانتظار موافقتك
+                                </span>
+                              ) : (
+                                <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/40 flex items-center gap-1">
+                                  <Check className="w-3 h-3" /> تمت الموافقة ({req.assignedRole ? (getRoleById(req.assignedRole)?.name || req.assignedRole) : 'محرر جداول'})
+                                </span>
+                              )}
+                            </div>
+
+                            {/* Member Code and Requested Role */}
+                            <div className="flex items-center gap-3 text-xs text-zinc-300 flex-wrap">
+                              <div className="flex items-center gap-1">
+                                <span className="text-zinc-400">كود العضو:</span>
+                                <span className="font-mono font-bold text-orange-400 px-2 py-0.5 rounded bg-black/50 border border-orange-500/30">
+                                  {req.userCode}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleCopyUserCode(req.userCode)}
+                                  className="p-1 text-zinc-400 hover:text-white"
+                                  title="نسخ كود العضو"
+                                >
+                                  {copiedCodeId === req.userCode ? (
+                                    <Check className="w-3 h-3 text-emerald-400" />
+                                  ) : (
+                                    <Copy className="w-3 h-3" />
+                                  )}
+                                </button>
+                              </div>
+
+                              <div className="text-zinc-300">
+                                الرتبة المكتوبة في الطلب: <strong className="text-amber-300 px-2 py-0.5 rounded bg-black/40 border border-amber-500/30">{req.requestedRole || 'لم يحدد'}</strong>
+                              </div>
+
+                              {req.passcodeUsed && (
+                                <div className="text-zinc-400 font-mono text-[11px]">
+                                  كود التفعيل: <span className="text-emerald-400">{req.passcodeUsed}</span>
+                                </div>
+                              )}
+
+                              <span className="text-zinc-500 text-[11px]">
+                                {formatReqDate(req.submittedAt)}
+                              </span>
+                            </div>
+
+                            {req.notes && (
+                              <p className="text-xs text-zinc-400 bg-black/40 p-2 rounded-xl border border-zinc-800">
+                                💬 {req.notes}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Approval & Role Controls */}
+                          <div className="flex items-center gap-2 shrink-0 flex-wrap sm:flex-nowrap">
+                            {isPending && (
+                              <>
+                                {/* Role Selector */}
+                                <div className="relative">
+                                  <select
+                                    value={selectedReqRole[req.id] || customRoles.find(r => r.name === req.requestedRole)?.id || 'editor'}
+                                    onChange={(e) =>
+                                      setSelectedReqRole({ ...selectedReqRole, [req.id]: e.target.value })
+                                    }
+                                    className="appearance-none bg-[#1c142c] border border-orange-500/40 focus:border-orange-500 rounded-xl px-3 py-2 pr-3 pl-7 text-xs font-bold text-white outline-none cursor-pointer"
+                                  >
+                                    {customRoles.map((r) => (
+                                      <option key={r.id} value={r.id} className="bg-[#120e20] text-white">
+                                        تعيين: {r.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <ChevronDown className="w-3.5 h-3.5 absolute left-2 top-2.5 pointer-events-none text-zinc-400" />
+                                </div>
+
+                                {/* Approve Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleApproveRequest(req)}
+                                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-black text-xs flex items-center gap-1.5 transition shadow-md cursor-pointer"
+                                >
+                                  <UserCheck className="w-4 h-4" />
+                                  <span>موافقة وترقية</span>
+                                </button>
+
+                                {/* Reject Button */}
+                                <button
+                                  type="button"
+                                  onClick={() => handleRejectRequest(req.id)}
+                                  className="p-2 rounded-xl bg-red-500/15 hover:bg-red-500/30 text-red-400 border border-red-500/30 transition cursor-pointer"
+                                  title="رفض وإزالة الطلب"
+                                >
+                                  <UserX className="w-4 h-4" />
+                                </button>
+                              </>
+                            )}
+
+                            {/* Role Changer for Approved Request */}
+                            {isApproved && (
+                              <div className="flex items-center gap-1.5 bg-[#120e20] px-2.5 py-1.5 rounded-xl border border-emerald-500/40 shadow-sm">
+                                <span className="text-[11px] font-bold text-emerald-300 pl-1 flex items-center gap-1">
+                                  <Shield className="w-3.5 h-3.5 text-emerald-400" />
+                                  تعديل الرتبة:
+                                </span>
+                                <div className="relative">
+                                  <select
+                                    value={req.assignedRole || 'editor'}
+                                    onChange={(e) => handleUpdateRequestRole(req, e.target.value)}
+                                    className="appearance-none bg-[#1c142c] border border-emerald-500/50 focus:border-emerald-400 rounded-lg px-3 py-1.5 pr-3 pl-7 text-xs font-bold text-amber-300 outline-none cursor-pointer hover:border-emerald-400 transition"
+                                    title="تغيير رتبة هذا العضو فوراً"
+                                  >
+                                    {customRoles.map((r) => (
+                                      <option key={r.id} value={r.id} className="bg-[#120e20] text-white">
+                                        {r.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <ChevronDown className="w-3.5 h-3.5 absolute left-2 top-2 pointer-events-none text-zinc-400" />
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Delete Request Record */}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteRequest(req.id)}
+                              className="p-2 rounded-xl text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition cursor-pointer"
+                              title="حذف السجل نهائياً"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-
-              {requests.length === 0 ? (
-                <div className="p-10 text-center bg-[#120f1f] border border-zinc-800 rounded-3xl text-zinc-400 space-y-2">
-                  <Send className="w-10 h-10 text-zinc-600 mx-auto" />
-                  <p className="text-sm font-bold text-zinc-300">لا توجد طلبات تفعيل حالياً</p>
-                  <p className="text-xs text-zinc-500">
-                    عندما يقوم أي عضو بإرسال كود التفعيل من زر "كود التفعيل" في شريط الموقع، سيظهر طلبه هنا فوراً.
-                  </p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-3.5">
-                  {requests.map((req) => {
-                    const isPending = req.status === 'pending';
-                    const isApproved = req.status === 'approved';
-
-                    return (
-                      <div
-                        key={req.id}
-                        className={`p-4 sm:p-5 rounded-2xl border transition flex flex-col md:flex-row md:items-center justify-between gap-4 ${
-                          isPending
-                            ? 'bg-[#151024] border-orange-500/50 shadow-[0_0_25px_rgba(249,115,22,0.15)]'
-                            : isApproved
-                            ? 'bg-[#0f1712] border-emerald-500/40 opacity-80'
-                            : 'bg-[#1a0f12] border-red-500/30 opacity-70'
-                        }`}
-                      >
-                        {/* Request Info */}
-                        <div className="space-y-2 min-w-0 flex-1">
-                          <div className="flex items-center gap-2.5 flex-wrap">
-                            <span className="text-sm sm:text-base font-black text-white">
-                              {req.name}
-                            </span>
-
-                            {req.discordTag && (
-                              <span className="text-xs px-2.5 py-0.5 rounded-lg bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-mono">
-                                @{req.discordTag}
-                              </span>
-                            )}
-
-                            {req.age && (
-                              <span className="text-xs px-2 py-0.5 rounded-lg bg-orange-500/15 text-orange-300 border border-orange-500/30 font-bold">
-                                العمر: {req.age} سنة
-                              </span>
-                            )}
-
-                            {/* Status Badge */}
-                            {isPending ? (
-                              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold border border-amber-500/40 flex items-center gap-1 animate-pulse">
-                                <Clock className="w-3 h-3" /> بانتظار موافقتك
-                              </span>
-                            ) : isApproved ? (
-                              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/40 flex items-center gap-1">
-                                <Check className="w-3 h-3" /> تمت الموافقة ({req.assignedRole ? (getRoleById(req.assignedRole)?.name || req.assignedRole) : 'محرر جداول'})
-                              </span>
-                            ) : (
-                              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-red-500/20 text-red-400 font-bold border border-red-500/40 flex items-center gap-1">
-                                <X className="w-3 h-3" /> تم الرفض
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Member Code and Requested Role */}
-                          <div className="flex items-center gap-3 text-xs text-zinc-300 flex-wrap">
-                            <div className="flex items-center gap-1">
-                              <span className="text-zinc-400">كود العضو:</span>
-                              <span className="font-mono font-bold text-orange-400 px-2 py-0.5 rounded bg-black/50 border border-orange-500/30">
-                                {req.userCode}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => handleCopyUserCode(req.userCode)}
-                                className="p-1 text-zinc-400 hover:text-white"
-                                title="نسخ كود العضو"
-                              >
-                                {copiedCodeId === req.userCode ? (
-                                  <Check className="w-3 h-3 text-emerald-400" />
-                                ) : (
-                                  <Copy className="w-3 h-3" />
-                                )}
-                              </button>
-                            </div>
-
-                            <div className="text-zinc-300">
-                              الرتبة المكتوبة في الطلب: <strong className="text-amber-300 px-2 py-0.5 rounded bg-black/40 border border-amber-500/30">{req.requestedRole || 'لم يحدد'}</strong>
-                            </div>
-
-                            {req.passcodeUsed && (
-                              <div className="text-zinc-400 font-mono text-[11px]">
-                                كود التفعيل: <span className="text-emerald-400">{req.passcodeUsed}</span>
-                              </div>
-                            )}
-
-                            <span className="text-zinc-500 text-[11px]">
-                              {new Date(req.submittedAt).toLocaleString('ar-SA')}
-                            </span>
-                          </div>
-
-                          {req.notes && (
-                            <p className="text-xs text-zinc-400 bg-black/40 p-2 rounded-xl border border-zinc-800">
-                              💬 {req.notes}
-                            </p>
-                          )}
-                        </div>
-
-                        {/* Approval & Role Controls */}
-                        <div className="flex items-center gap-2 shrink-0 flex-wrap sm:flex-nowrap">
-                          {isPending && (
-                            <>
-                              {/* Role Selector */}
-                              <div className="relative">
-                                <select
-                                  value={selectedReqRole[req.id] || customRoles.find(r => r.name === req.requestedRole)?.id || 'editor'}
-                                  onChange={(e) =>
-                                    setSelectedReqRole({ ...selectedReqRole, [req.id]: e.target.value })
-                                  }
-                                  className="appearance-none bg-[#1c142c] border border-orange-500/40 focus:border-orange-500 rounded-xl px-3 py-2 pr-3 pl-7 text-xs font-bold text-white outline-none cursor-pointer"
-                                >
-                                  {customRoles.map((r) => (
-                                    <option key={r.id} value={r.id} className="bg-[#120e20] text-white">
-                                      تعيين: {r.name}
-                                    </option>
-                                  ))}
-                                </select>
-                                <ChevronDown className="w-3.5 h-3.5 absolute left-2 top-2.5 pointer-events-none text-zinc-400" />
-                              </div>
-
-                              {/* Approve Button */}
-                              <button
-                                type="button"
-                                onClick={() => handleApproveRequest(req)}
-                                className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-black font-black text-xs flex items-center gap-1.5 transition shadow-md cursor-pointer"
-                              >
-                                <UserCheck className="w-4 h-4" />
-                                <span>موافقة وترقية</span>
-                              </button>
-
-                              {/* Reject Button */}
-                              <button
-                                type="button"
-                                onClick={() => handleRejectRequest(req.id)}
-                                className="p-2 rounded-xl bg-red-500/15 hover:bg-red-500/30 text-red-400 border border-red-500/30 transition cursor-pointer"
-                                title="رفض الطلب"
-                              >
-                                <UserX className="w-4 h-4" />
-                              </button>
-                            </>
-                          )}
-
-                          {/* Role Changer for Approved Request */}
-                          {isApproved && (
-                            <div className="flex items-center gap-1.5 bg-[#120e20] px-2.5 py-1.5 rounded-xl border border-emerald-500/40 shadow-sm">
-                              <span className="text-[11px] font-bold text-emerald-300 pl-1 flex items-center gap-1">
-                                <Shield className="w-3.5 h-3.5 text-emerald-400" />
-                                تعديل الرتبة:
-                              </span>
-                              <div className="relative">
-                                <select
-                                  value={req.assignedRole || 'editor'}
-                                  onChange={(e) => handleUpdateRequestRole(req, e.target.value)}
-                                  className="appearance-none bg-[#1c142c] border border-emerald-500/50 focus:border-emerald-400 rounded-lg px-3 py-1.5 pr-3 pl-7 text-xs font-bold text-amber-300 outline-none cursor-pointer hover:border-emerald-400 transition"
-                                  title="تغيير رتبة هذا العضو فوراً"
-                                >
-                                  {customRoles.map((r) => (
-                                    <option key={r.id} value={r.id} className="bg-[#120e20] text-white">
-                                      {r.name}
-                                    </option>
-                                  ))}
-                                </select>
-                                <ChevronDown className="w-3.5 h-3.5 absolute left-2 top-2 pointer-events-none text-zinc-400" />
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Re-activate for Rejected Request */}
-                          {!isPending && !isApproved && (
-                            <div className="flex items-center gap-1.5">
-                              <div className="relative">
-                                <select
-                                  value={selectedReqRole[req.id] || 'editor'}
-                                  onChange={(e) =>
-                                    setSelectedReqRole({ ...selectedReqRole, [req.id]: e.target.value })
-                                  }
-                                  className="appearance-none bg-[#1c142c] border border-orange-500/40 focus:border-orange-500 rounded-lg px-2.5 py-1.5 pr-2.5 pl-6 text-xs font-bold text-white outline-none cursor-pointer"
-                                >
-                                  {customRoles.map((r) => (
-                                    <option key={r.id} value={r.id} className="bg-[#120e20] text-white">
-                                      {r.name}
-                                    </option>
-                                  ))}
-                                </select>
-                                <ChevronDown className="w-3.5 h-3.5 absolute left-1.5 top-2 pointer-events-none text-zinc-400" />
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => handleApproveRequest(req)}
-                                className="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 border border-emerald-500/40 font-bold text-xs flex items-center gap-1 transition cursor-pointer"
-                                title="الموافقة وتعيين رتبة"
-                              >
-                                <UserCheck className="w-3.5 h-3.5" />
-                                <span>الموافقة وتعيين</span>
-                              </button>
-                            </div>
-                          )}
-
-                          {/* Delete Request Record */}
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteRequest(req.id)}
-                            className="p-2 rounded-xl text-zinc-500 hover:text-red-400 hover:bg-zinc-800 transition cursor-pointer"
-                            title="حذف السجل"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
+            );
+          })()}
 
           {/* ================= TAB 2: DIRECT ADD / PROMOTE BY USER CODE ================= */}
           {activeTab === 'add_by_code' && (
@@ -1045,20 +1010,9 @@ export const OwnerDashboardModal: React.FC<OwnerDashboardModalProps> = ({
                     <span>إدارة كافة الحسابات والمسجلين</span>
                   </h4>
                   <p className="text-[11px] text-zinc-400">
-                    يمكنك تعديل أي حساب، تغيير رتبته، تجميده، أو تصفير الإداريين وإعادة توزيع الرتب عبر النظام الجديد.
+                    يمكنك تعديل أي حساب، تغيير رتبته وصلاحياته، تجميده أو تعديل بياناته. الرتب محفوظة دائماً في قاعدة البيانات.
                   </p>
                 </div>
-                {users.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={handleResetAllUsersToOwner}
-                    className="px-3 py-1.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-300 hover:text-red-200 border border-red-500/30 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shrink-0"
-                    title="حذف جميع الرتب والإداريين وإبقاء المالك الأساسي فقط"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 text-red-400" />
-                    <span>تصفير الإداريين (إبقاء المالك فقط)</span>
-                  </button>
-                )}
               </div>
 
               {/* Search and Filters Bar */}

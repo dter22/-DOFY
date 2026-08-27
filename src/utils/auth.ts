@@ -1,4 +1,6 @@
-import { AuthorizedUser, UserRole, CustomRole, RolePermissions, ActivationRequest } from '../types';
+import { AuthorizedUser, UserRole, CustomRole, RolePermissions, ActivationRequest, AdminMember } from '../types';
+import { buildApiUrl, fetchApi } from './apiConfig';
+import { getRankNumberByName, PresetRankItem } from './ranksConfig';
 
 export const OWNER_EMAIL = 'alhassanalbleas@gmail.com';
 export const LOCAL_STORAGE_USERS_KEY = 'server_ban_authorized_users_v7';
@@ -6,6 +8,7 @@ export const LOCAL_STORAGE_ROLES_KEY = 'server_ban_custom_roles_v7';
 export const LOCAL_STORAGE_SESSION_KEY = 'server_ban_auth_session_v7';
 export const LOCAL_STORAGE_MASTER_CODE_KEY = 'server_ban_master_invite_code_v7';
 export const LOCAL_STORAGE_REQUESTS_KEY = 'server_ban_activation_requests_v7';
+export const LOCAL_STORAGE_STAFF_KEY = 'server_ban_staff_members_v1';
 
 export const DEFAULT_MASTER_CODE = 'DOFY-STAFF-2026';
 
@@ -120,9 +123,10 @@ export const DEFAULT_USERS: AuthorizedUser[] = [
 
 // ================= SYNC WITH SERVER ================= //
 
-async function syncWithServer<T>(url: string, method: string = 'GET', body?: any): Promise<T | null> {
+export async function syncWithServer<T>(url: string, method: string = 'GET', body?: any): Promise<T | null> {
   try {
-    const res = await fetch(url, {
+    const fullUrl = buildApiUrl(url);
+    const res = await fetch(fullUrl, {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: body ? JSON.stringify(body) : undefined,
@@ -353,6 +357,289 @@ export function hasUserPermission(
   if (user.email.toLowerCase() === OWNER_EMAIL.toLowerCase() || user.role === 'owner') return true;
   const perms = getUserPermissions(user);
   return !!perms[permissionKey];
+}
+
+// ================= HIERARCHY & AUTHORITY SYSTEM ================= //
+
+/**
+ * Checks if a given user is the primary Owner (Dofy)
+ */
+export function isOwnerUser(user: AuthorizedUser | null): boolean {
+  if (!user) return false;
+  const cleanEmail = (user.email || '').toLowerCase().trim();
+  const cleanName = (user.name || '').toLowerCase().trim();
+  const cleanUsername = (user.username || '').toLowerCase().trim();
+  return (
+    cleanEmail === OWNER_EMAIL.toLowerCase() ||
+    user.role === 'owner' ||
+    user.customRoleId === 'owner' ||
+    cleanName === 'dofy' ||
+    cleanUsername === 'dofy' ||
+    user.userCode === 'MS-1001'
+  );
+}
+
+/**
+ * Computes numeric authority level for an AuthorizedUser (higher number = higher power)
+ * Owner: 1000
+ * High Ranks / Roles: 600 - 800
+ * Mid Ranks: 300 - 550
+ * Low Ranks: 100 - 250
+ * Viewer: 10
+ */
+export function getUserAuthorityLevel(
+  user: AuthorizedUser | null,
+  staffList?: AdminMember[],
+  ranksList?: PresetRankItem[]
+): number {
+  if (!user || !user.isActive) return 0;
+  if (isOwnerUser(user)) return 1000;
+
+  let level = 10; // Viewer base
+
+  const roleObj = getUserRoleObj(user);
+  if (roleObj.id === 'owner') level = 1000;
+  else if (roleObj.id === 'admin') level = 550;
+  else if (roleObj.id === 'ban_mod') level = 350;
+  else if (roleObj.id === 'editor') level = 250;
+  else if (roleObj.permissions.canManageUsers && roleObj.permissions.canManageStaff) level = 600;
+  else if (roleObj.permissions.canManageStaff) level = 450;
+  else if (roleObj.permissions.canEditViolations || roleObj.permissions.canEditCategories) level = 250;
+
+  // If user exists in staffList, check their custom rank number (1-25)
+  if (staffList && Array.isArray(staffList)) {
+    const uName = (user.name || '').toLowerCase().trim();
+    const uTag = (user.username || '').toLowerCase().trim();
+    const uCode = (user.userCode || '').toLowerCase().trim();
+
+    const staffEntry = staffList.find(
+      (s) =>
+        (s.name && s.name.toLowerCase().trim() === uName) ||
+        (s.discordTag && uTag && s.discordTag.toLowerCase().trim() === uTag) ||
+        (uCode && s.id && s.id.toLowerCase() === uCode) ||
+        (user.id && s.id === user.id)
+    );
+
+    if (staffEntry && staffEntry.rank) {
+      const rankNum = getRankNumberByName(staffEntry.rank, ranksList);
+      if (rankNum > 0) {
+        const staffLevel = 100 + rankNum * 25; // Rank 25 (Marshal) = 725, Rank 1 = 125
+        if (staffLevel > level) level = staffLevel;
+      }
+    }
+  }
+
+  return level;
+}
+
+/**
+ * Computes authority level for an AdminMember in the staff directory
+ */
+export function getStaffAuthorityLevel(
+  staffMember: AdminMember,
+  ranksList?: PresetRankItem[]
+): number {
+  const cleanName = (staffMember.name || '').toLowerCase().trim();
+  const cleanTag = (staffMember.discordTag || '').toLowerCase().trim();
+  const cleanRank = (staffMember.rank || '').toLowerCase().trim();
+
+  if (
+    cleanName === 'dofy' ||
+    cleanTag === 'dofy' ||
+    cleanRank.includes('owner') ||
+    cleanRank.includes('مالك') ||
+    cleanRank.includes('مؤسس')
+  ) {
+    return 1000;
+  }
+
+  const rankNum = getRankNumberByName(staffMember.rank, ranksList);
+  return 100 + rankNum * 25;
+}
+
+/**
+ * Determines whether an actor can edit, change rank of, or remove a target staff member.
+ * STRICT RULE: Only the Owner OR a supervisor with a strictly HIGHER authority level can remove or modify.
+ */
+export function canActorManageStaffMember(
+  actor: AuthorizedUser | null,
+  targetStaff: AdminMember,
+  staffList?: AdminMember[],
+  ranksList?: PresetRankItem[]
+): { allowed: boolean; reason?: string } {
+  if (!actor || !actor.isActive) {
+    return { allowed: false, reason: 'يجب تسجيل الدخول بصلاحيات إدارية أولاً.' };
+  }
+
+  // Owner has absolute authority over all accounts and staff
+  if (isOwnerUser(actor)) {
+    return { allowed: true };
+  }
+
+  const targetLevel = getStaffAuthorityLevel(targetStaff, ranksList);
+  if (targetLevel >= 1000) {
+    return { allowed: false, reason: 'لا يمكن تعديل أو إزالة المالك الأساسي للنظام تحت أي ظرف.' };
+  }
+
+  // Prevent actor from self-removal or self-demotion from directory
+  const actorName = (actor.name || '').toLowerCase().trim();
+  const actorTag = (actor.username || '').toLowerCase().trim();
+  const actorCode = (actor.userCode || '').toLowerCase().trim();
+  const tName = (targetStaff.name || '').toLowerCase().trim();
+  const tTag = (targetStaff.discordTag || '').toLowerCase().trim();
+
+  if (
+    (actorCode && actorCode === targetStaff.id?.toLowerCase()) ||
+    (actorName && actorName === tName) ||
+    (actorTag && tTag && actorTag === tTag)
+  ) {
+    return { allowed: false, reason: 'لا يمكنك إزالة نفسك من طاقم الإدارة.' };
+  }
+
+  const actorLevel = getUserAuthorityLevel(actor, staffList, ranksList);
+
+  if (actorLevel > targetLevel) {
+    return { allowed: true };
+  } else if (actorLevel === targetLevel) {
+    return { allowed: false, reason: 'لا يمكنك تعديل أو إزالة إداري برتبة مساوية لرتبتك (يتطلب صلاحية أعلى منك).' };
+  } else {
+    return { allowed: false, reason: 'لا تملك صلاحيات كافية (رتبتك الإدارية أقل من هذا الإداري).' };
+  }
+}
+
+/**
+ * Determines whether an actor can edit or delete an AuthorizedUser account.
+ */
+export function canActorManageUserAccount(
+  actor: AuthorizedUser | null,
+  targetUser: AuthorizedUser
+): { allowed: boolean; reason?: string } {
+  if (!actor || !actor.isActive) {
+    return { allowed: false, reason: 'يجب تسجيل الدخول كإداري أولاً.' };
+  }
+
+  if (isOwnerUser(actor)) {
+    return { allowed: true };
+  }
+
+  if (isOwnerUser(targetUser)) {
+    return { allowed: false, reason: 'لا يمكن تعديل أو حذف حساب المالك الأساسي.' };
+  }
+
+  if (actor.id === targetUser.id) {
+    return { allowed: false, reason: 'لا يمكنك تعديل صلاحيات حسابك الخاص بنفسك.' };
+  }
+
+  const actorLevel = getUserAuthorityLevel(actor);
+  const targetLevel = getUserAuthorityLevel(targetUser);
+
+  if (actorLevel > targetLevel) {
+    return { allowed: true };
+  } else {
+    return { allowed: false, reason: 'صلاحياتك الإدارية غير كافية لتعديل هذا الحساب.' };
+  }
+}
+
+/**
+ * Removes a staff member from the administration directory AND revokes their permissions completely.
+ * Only succeeds if actor has strictly higher permissions than the target.
+ */
+export function removeStaffMemberAndRevokePermissions(
+  staffId: string,
+  actor: AuthorizedUser | null,
+  staffList: AdminMember[],
+  ranksList?: PresetRankItem[]
+): { success: boolean; message: string; updatedStaffList: AdminMember[] } {
+  const targetStaff = staffList.find((s) => s.id === staffId);
+  if (!targetStaff) {
+    return { success: false, message: 'الإداري غير موجود في القائمة', updatedStaffList: staffList };
+  }
+
+  const check = canActorManageStaffMember(actor, targetStaff, staffList, ranksList);
+  if (!check.allowed) {
+    return { success: false, message: check.reason || 'لا تملك صلاحية إزالة هذا الإداري', updatedStaffList: staffList };
+  }
+
+  // 1. Remove from staffList and push to server
+  const filteredStaff = staffList.filter((s) => s.id !== staffId);
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_STAFF_KEY, JSON.stringify(filteredStaff));
+    } catch (e) {}
+  }
+  syncWithServer('/api/staff', 'POST', { staff: filteredStaff });
+
+  // 2. Revoke permissions from authorized users list
+  const users = loadAuthorizedUsers();
+  const targetName = (targetStaff.name || '').toLowerCase().trim();
+  const targetTag = (targetStaff.discordTag || '').toLowerCase().trim();
+
+  let modifiedUsers = false;
+  users.forEach((u) => {
+    const uName = (u.name || '').toLowerCase().trim();
+    const uTag = (u.username || '').toLowerCase().trim();
+    const uCode = (u.userCode || '').toLowerCase().trim();
+    const isMatch =
+      (targetStaff.id && u.id === targetStaff.id) ||
+      (targetStaff.id && uCode === targetStaff.id.toLowerCase()) ||
+      (targetName && uName === targetName) ||
+      (targetTag && uTag === targetTag);
+
+    if (isMatch && !isOwnerUser(u)) {
+      u.role = 'viewer';
+      u.customRoleId = 'viewer';
+      u.addedBy = `تم سحب الرتبة الإدارية بواسطة (${actor?.name || 'الإدارة العليا'})`;
+      modifiedUsers = true;
+    }
+  });
+
+  if (modifiedUsers) {
+    saveAuthorizedUsers(users, true);
+  }
+
+  // 3. Update current session if demoted user is on this machine
+  const currentSession = loadCurrentSession();
+  if (currentSession && !isOwnerUser(currentSession)) {
+    const sName = (currentSession.name || '').toLowerCase().trim();
+    const sTag = (currentSession.username || '').toLowerCase().trim();
+    const sCode = (currentSession.userCode || '').toLowerCase().trim();
+    if (
+      (targetStaff.id && currentSession.id === targetStaff.id) ||
+      (targetStaff.id && sCode === targetStaff.id.toLowerCase()) ||
+      (targetName && sName === targetName) ||
+      (targetTag && sTag === targetTag)
+    ) {
+      currentSession.role = 'viewer';
+      currentSession.customRoleId = 'viewer';
+      saveCurrentSession(currentSession);
+    }
+  }
+
+  // 4. Update any activation request to revoked
+  try {
+    const requests = loadActivationRequests();
+    let reqModified = false;
+    requests.forEach((r) => {
+      if (
+        (targetStaff.id && r.userCode === targetStaff.id) ||
+        (targetName && r.name.toLowerCase() === targetName) ||
+        (targetTag && r.discordTag?.toLowerCase() === targetTag)
+      ) {
+        r.status = 'rejected';
+        r.notes = `تم سحب الرتبة الإدارية بواسطة (${actor?.name || 'الإدارة العليا'})`;
+        reqModified = true;
+      }
+    });
+    if (reqModified) {
+      saveActivationRequests(requests, true);
+    }
+  } catch (e) {}
+
+  return {
+    success: true,
+    message: `تمت إزالة (${targetStaff.name}) من طاقم الإدارة وسحب كامل صلاحياته الإدارية بنجاح!`,
+    updatedStaffList: filteredStaff,
+  };
 }
 
 // ================= PASSCODE & CODE MANAGEMENT ================= //
@@ -1017,6 +1304,28 @@ export function updateUserRole(userId: string, newRole: UserRole | string): bool
   user.role = standardRole;
   user.customRoleId = newRole;
   saveAuthorizedUsers(users);
+
+  // If demoted to viewer, also remove from staff directory
+  if (newRole === 'viewer') {
+    try {
+      const savedStaff = localStorage.getItem(LOCAL_STORAGE_STAFF_KEY);
+      if (savedStaff) {
+        const staff: AdminMember[] = JSON.parse(savedStaff);
+        const filtered = staff.filter(
+          (s) =>
+            s.id !== user.id &&
+            s.id !== user.userCode &&
+            s.name.toLowerCase() !== user.name.toLowerCase() &&
+            (!user.username || !s.discordTag || s.discordTag.toLowerCase() !== user.username.toLowerCase())
+        );
+        if (filtered.length !== staff.length) {
+          localStorage.setItem(LOCAL_STORAGE_STAFF_KEY, JSON.stringify(filtered));
+          syncWithServer('/api/staff', 'POST', { staff: filtered });
+        }
+      }
+    } catch (e) {}
+  }
+
   return true;
 }
 
@@ -1071,6 +1380,26 @@ export function updateUserAccountDetails(
         : 'editor';
     user.role = standardRole;
     user.customRoleId = details.role;
+
+    if (details.role === 'viewer') {
+      try {
+        const savedStaff = localStorage.getItem(LOCAL_STORAGE_STAFF_KEY);
+        if (savedStaff) {
+          const staff: AdminMember[] = JSON.parse(savedStaff);
+          const filtered = staff.filter(
+            (s) =>
+              s.id !== user.id &&
+              s.id !== user.userCode &&
+              s.name.toLowerCase() !== user.name.toLowerCase() &&
+              (!user.username || !s.discordTag || s.discordTag.toLowerCase() !== user.username.toLowerCase())
+          );
+          if (filtered.length !== staff.length) {
+            localStorage.setItem(LOCAL_STORAGE_STAFF_KEY, JSON.stringify(filtered));
+            syncWithServer('/api/staff', 'POST', { staff: filtered });
+          }
+        }
+      } catch (e) {}
+    }
   }
   if (details.isActive !== undefined && !isOwnerAccount) {
     user.isActive = details.isActive;
@@ -1103,6 +1432,26 @@ export function removeUserAccount(userId: string): boolean {
   const filtered = users.filter((u) => u.id !== userId);
   saveAuthorizedUsers(filtered);
   syncWithServer(`/api/users/${userId}`, 'DELETE');
+
+  // Also remove from staff directory if present
+  try {
+    const savedStaff = localStorage.getItem(LOCAL_STORAGE_STAFF_KEY);
+    if (savedStaff) {
+      const staff: AdminMember[] = JSON.parse(savedStaff);
+      const filteredStaff = staff.filter(
+        (s) =>
+          s.id !== user.id &&
+          s.id !== user.userCode &&
+          s.name.toLowerCase() !== user.name.toLowerCase() &&
+          (!user.username || !s.discordTag || s.discordTag.toLowerCase() !== user.username.toLowerCase())
+      );
+      if (filteredStaff.length !== staff.length) {
+        localStorage.setItem(LOCAL_STORAGE_STAFF_KEY, JSON.stringify(filteredStaff));
+        syncWithServer('/api/staff', 'POST', { staff: filteredStaff });
+      }
+    }
+  } catch (e) {}
+
   return true;
 }
 

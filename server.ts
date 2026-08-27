@@ -8,6 +8,17 @@ const PORT = 3000;
 
 app.use(express.json({ limit: '10mb' }));
 
+// Enable CORS for external domains like Netlify (majann.netlify.app)
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 // Local JSON Storage Path for Server Persistence
 const DATA_DIR = path.join(process.cwd(), 'data');
 if (!fs.existsSync(DATA_DIR)) {
@@ -19,6 +30,7 @@ const REQUESTS_FILE = path.join(DATA_DIR, 'activation_requests.json');
 const ROLES_FILE = path.join(DATA_DIR, 'roles.json');
 const PASSCODE_FILE = path.join(DATA_DIR, 'passcode.json');
 const STAFF_FILE = path.join(DATA_DIR, 'staff.json');
+const CATEGORIES_FILE = path.join(DATA_DIR, 'categories.json');
 
 function readJsonFile<T>(filePath: string, fallback: T): T {
   try {
@@ -179,6 +191,39 @@ app.post('/api/staff', (req, res) => {
     return res.json({ success: true, count: staff.length });
   }
   res.status(400).json({ success: false, message: 'Expected array of staff' });
+});
+
+// 6. Rules & Categories API
+app.get('/api/categories', (req, res) => {
+  const categories = readJsonFile(CATEGORIES_FILE, []);
+  res.json({ success: true, categories });
+});
+
+app.post('/api/categories', (req, res) => {
+  const { categories } = req.body;
+  if (Array.isArray(categories)) {
+    writeJsonFile(CATEGORIES_FILE, categories);
+    return res.json({ success: true, count: categories.length });
+  }
+  res.status(400).json({ success: false, message: 'Expected array of categories' });
+});
+
+// 7. Comprehensive State Endpoint for Remote Syncing (Netlify, External Clients)
+app.get('/api/state-bundle', (req, res) => {
+  const users = readJsonFile(USERS_FILE, []);
+  const staff = readJsonFile(STAFF_FILE, []);
+  const categories = readJsonFile(CATEGORIES_FILE, []);
+  const roles = readJsonFile(ROLES_FILE, []);
+  const requests = readJsonFile(REQUESTS_FILE, []);
+  res.json({
+    success: true,
+    users,
+    staff,
+    categories,
+    roles,
+    requests,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // ======================== SERVER & VITE INTEGRATION ========================

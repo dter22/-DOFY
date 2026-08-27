@@ -37,6 +37,7 @@ import {
   hasUserPermission,
   getRoleById,
   getUserRoleObj,
+  syncWithServer,
 } from './utils/auth';
 import {
   Shield,
@@ -275,6 +276,81 @@ export default function App() {
     return () => clearInterval(interval);
   }, [currentUser?.userCode, currentUser?.role, currentUser?.customRoleId]);
 
+  // --- REAL-TIME POLLING & SYNC FOR STAFF LIST ---
+  useEffect(() => {
+    // Initial fetch from server
+    syncWithServer<{ success: boolean; staff: AdminMember[] }>('/api/staff').then((data) => {
+      if (data && data.staff && Array.isArray(data.staff) && data.staff.length > 0) {
+        setStaffList(data.staff);
+        try {
+          localStorage.setItem(LOCAL_STORAGE_STAFF_KEY, JSON.stringify(data.staff));
+        } catch (e) {}
+      } else {
+        // Push initial/local staff to server
+        syncWithServer('/api/staff', 'POST', { staff: staffList });
+      }
+    });
+
+    // Background polling every 3 seconds to sync edits from all admins/owner
+    const pollStaff = async () => {
+      try {
+        const data = await syncWithServer<{ success: boolean; staff: AdminMember[] }>('/api/staff');
+        if (data && data.staff && Array.isArray(data.staff) && data.staff.length > 0) {
+          setStaffList((prev) => {
+            if (JSON.stringify(prev) !== JSON.stringify(data.staff)) {
+              return data.staff;
+            }
+            return prev;
+          });
+        }
+      } catch (e) {}
+    };
+
+    const interval = setInterval(pollStaff, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // --- REAL-TIME POLLING & SYNC FOR RULES & CATEGORIES ---
+  useEffect(() => {
+    // Initial fetch from server
+    syncWithServer<{ success: boolean; categories: RuleCategory[] }>('/api/categories').then((data) => {
+      if (data && data.categories && Array.isArray(data.categories) && data.categories.length > 0) {
+        setCategories(data.categories);
+        try {
+          localStorage.setItem(LOCAL_STORAGE_RULES_KEY, JSON.stringify(data.categories));
+        } catch (e) {}
+      } else {
+        syncWithServer('/api/categories', 'POST', { categories });
+      }
+    });
+
+    const pollCategories = async () => {
+      try {
+        const data = await syncWithServer<{ success: boolean; categories: RuleCategory[] }>('/api/categories');
+        if (data && data.categories && Array.isArray(data.categories) && data.categories.length > 0) {
+          setCategories((prev) => {
+            if (JSON.stringify(prev) !== JSON.stringify(data.categories)) {
+              return data.categories;
+            }
+            return prev;
+          });
+        }
+      } catch (e) {}
+    };
+
+    const interval = setInterval(pollCategories, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Handler to update staff list and push to server
+  const handleUpdateStaffList = (newList: AdminMember[]) => {
+    setStaffList(newList);
+    try {
+      localStorage.setItem(LOCAL_STORAGE_STAFF_KEY, JSON.stringify(newList));
+    } catch (e) {}
+    syncWithServer('/api/staff', 'POST', { staff: newList });
+  };
+
   // Sync staff list to local storage
   useEffect(() => {
     try {
@@ -291,6 +367,7 @@ export default function App() {
     } catch (e) {
       console.error('Failed to save rules', e);
     }
+    syncWithServer('/api/categories', 'POST', { categories });
   }, [categories]);
 
   // Sync authorized users
@@ -586,7 +663,7 @@ export default function App() {
           currentUser={currentUser}
           onBackToRules={() => setCurrentView('rules')}
           staffList={staffList}
-          onUpdateStaffList={setStaffList}
+          onUpdateStaffList={handleUpdateStaffList}
           rankColors={rankColors}
           onUpdateRankColors={handleUpdateRankColors}
           ranksList={ranksList}
