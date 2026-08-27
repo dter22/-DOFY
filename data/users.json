@@ -1,0 +1,14 @@
+[
+  {
+    "id": "user-owner",
+    "email": "alhassanalbleas@gmail.com",
+    "username": "Dofy",
+    "name": "Dofy",
+    "role": "owner",
+    "customRoleId": "owner",
+    "addedAt": "2026-08-26",
+    "addedBy": "النظام الأساسي",
+    "isActive": true,
+    "userCode": "MS-1001"
+  }
+]
