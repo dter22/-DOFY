@@ -20,6 +20,9 @@ import { ActivationCodeModal } from './components/ActivationCodeModal';
 import { EditCategoryModal } from './components/EditCategoryModal';
 import { AddCategoryModal } from './components/AddCategoryModal';
 import { AdminDirectory } from './components/AdminDirectory';
+import { InteractiveMouseBackground } from './components/InteractiveMouseBackground';
+import { SiteSettings, loadSavedSiteSettings, saveSiteSettingsToStorage } from './utils/siteConfig';
+import { loadSavedResponsibilities } from './utils/responsibilitiesConfig';
 import { loadSavedRankColors, saveRankColorsToStorage } from './utils/rankColors';
 import {
   PresetRankItem,
@@ -185,6 +188,16 @@ export default function App() {
     setRankColors(newColors);
     saveRankColorsToStorage(newColors);
     showNotification('تم تحديث وحفظ ألوان الرتب الـ 25 بنجاح!');
+  };
+
+  // Site Branding & Settings
+  const [siteSettings, setSiteSettings] = useState<SiteSettings>(() => loadSavedSiteSettings());
+
+  const handleUpdateSiteSettings = (newSettings: SiteSettings) => {
+    setSiteSettings(newSettings);
+    saveSiteSettingsToStorage(newSettings);
+    document.title = `${newSettings.siteTitle} | ${newSettings.serverName}`;
+    showNotification('تم تحديث هوية وإعدادات الموقع بنجاح');
   };
 
   // Modals
@@ -682,16 +695,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen relative bg-[#07060b] text-white flex flex-col selection:bg-orange-500 selection:text-black overflow-x-hidden font-sans">
-      
-      {/* BEAUTIFIED AMBIENT BACKGROUND WITH GLOWS & MESH TEXTURE */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute -top-40 left-1/2 -translate-x-1/2 w-[1000px] h-[550px] bg-gradient-to-b from-orange-600/15 via-amber-700/10 to-transparent blur-[140px] rounded-full" />
-        <div className="absolute top-[45%] -left-48 w-[600px] h-[600px] bg-red-600/10 blur-[160px] rounded-full" />
-        <div className="absolute top-[60%] -right-48 w-[650px] h-[650px] bg-orange-500/10 blur-[170px] rounded-full" />
-        <div className="absolute -bottom-40 left-1/3 w-[800px] h-[450px] bg-purple-900/10 blur-[180px] rounded-full" />
-        <div className="absolute inset-0 bg-[radial-gradient(#f97316_1px,transparent_1px)] [background-size:28px_28px] opacity-[0.07]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,rgba(5,4,8,0.7)_100%)]" />
-      </div>
+      {/* INTERACTIVE DYNAMIC MOUSE-FOLLOWING BACKGROUND */}
+      <InteractiveMouseBackground />
 
       {/* Floating Notification Toast */}
       {notification && (
@@ -707,6 +712,8 @@ export default function App() {
         totalCategories={categories.length}
         currentUser={currentUser}
         canEdit={canEdit}
+        siteSettings={siteSettings}
+        onUpdateSiteSettings={handleUpdateSiteSettings}
         onOpenCalculator={() => setIsCalculatorOpen(true)}
         onOpenExport={() => setIsExportOpen(true)}
         onOpenAddModal={() => setIsAddModalOpen(true)}
@@ -934,7 +941,7 @@ export default function App() {
             <span>جدول لوائح وباندات السيرفر المعتمد (3 أعمدة × 4 صفوف) مع حاسبة الباند التراكمية</span>
           </div>
           <div className="flex items-center gap-4 text-zinc-400">
-            <span>المالك: <code className="text-orange-400 font-mono">Dofy ({OWNER_EMAIL})</code></span>
+            <span>المالك: <code className="text-orange-400 font-mono font-bold">Dofy</code></span>
             <span>•</span>
             <span>إجمالي البنود: <strong className="text-white">{totalViolationsCount}</strong></span>
           </div>

@@ -36,6 +36,24 @@ export const DEFAULT_ROLES: CustomRole[] = [
     createdAt: '2026-08-26',
   },
   {
+    id: 'commander',
+    name: 'قائد عام (Commander)',
+    description: 'صلاحية القيادة العامة لجميع الأقسام، مراجعة وقبول ورفض طلبات التقديم والتحكم بحالات الأقسام (خاص بالمالك للتعيين)',
+    color: '#6366f1',
+    badgeIcon: 'Shield',
+    isSystem: true,
+    permissions: {
+      canEditViolations: true,
+      canEditCategories: true,
+      canManageStaff: true,
+      canViewStaffDirectory: true,
+      canUseCalculator: true,
+      canExportDiscord: true,
+      canManageUsers: false,
+    },
+    createdAt: '2026-08-26',
+  },
+  {
     id: 'admin',
     name: 'مشرف متقدم (Head Admin)',
     description: 'تعديل الجداول والمخالفات + إدارة قائمة الإدارة والصلاحيات',
@@ -46,9 +64,28 @@ export const DEFAULT_ROLES: CustomRole[] = [
       canEditViolations: true,
       canEditCategories: true,
       canManageStaff: true,
+      canViewStaffDirectory: true,
       canUseCalculator: true,
       canExportDiscord: true,
       canManageUsers: true,
+    },
+    createdAt: '2026-08-26',
+  },
+  {
+    id: 'management',
+    name: 'إدارة عامة (Management)',
+    description: 'إمكانية تصفح وقراءة جدول الإدارة والأقسام بدون صلاحية التعديل على الأعضاء إلا بإذن مخصص',
+    color: '#14b8a6',
+    badgeIcon: 'Eye',
+    isSystem: true,
+    permissions: {
+      canEditViolations: false,
+      canEditCategories: false,
+      canManageStaff: false,
+      canViewStaffDirectory: true,
+      canUseCalculator: true,
+      canExportDiscord: false,
+      canManageUsers: false,
     },
     createdAt: '2026-08-26',
   },
@@ -63,6 +100,7 @@ export const DEFAULT_ROLES: CustomRole[] = [
       canEditViolations: true,
       canEditCategories: false,
       canManageStaff: false,
+      canViewStaffDirectory: false,
       canUseCalculator: true,
       canExportDiscord: false,
       canManageUsers: false,
@@ -80,6 +118,7 @@ export const DEFAULT_ROLES: CustomRole[] = [
       canEditViolations: true,
       canEditCategories: true,
       canManageStaff: false,
+      canViewStaffDirectory: false,
       canUseCalculator: true,
       canExportDiscord: false,
       canManageUsers: false,
@@ -97,6 +136,7 @@ export const DEFAULT_ROLES: CustomRole[] = [
       canEditViolations: false,
       canEditCategories: false,
       canManageStaff: false,
+      canViewStaffDirectory: false,
       canUseCalculator: true,
       canExportDiscord: false,
       canManageUsers: false,
@@ -180,7 +220,7 @@ export function loadCustomRoles(): CustomRole[] {
   try {
     const saved = localStorage.getItem(LOCAL_STORAGE_ROLES_KEY);
     if (saved) {
-      const parsed: CustomRole[] = JSON.parse(saved);
+      let parsed: CustomRole[] = JSON.parse(saved);
       const ownerIdx = parsed.findIndex((r) => r.id === 'owner');
       if (ownerIdx === -1) {
         parsed.unshift(DEFAULT_ROLES[0]);
@@ -195,6 +235,19 @@ export function loadCustomRoles(): CustomRole[] {
           canManageUsers: true,
         };
       }
+
+      // Ensure commander is present
+      if (!parsed.some((r) => r.id === 'commander')) {
+        const cmdRole = DEFAULT_ROLES.find((r) => r.id === 'commander');
+        if (cmdRole) parsed.splice(1, 0, cmdRole);
+      }
+
+      // Ensure management is present
+      if (!parsed.some((r) => r.id === 'management')) {
+        const mgmtRole = DEFAULT_ROLES.find((r) => r.id === 'management');
+        if (mgmtRole) parsed.push(mgmtRole);
+      }
+
       return parsed;
     }
   } catch (e) {
@@ -313,13 +366,32 @@ export function getRoleById(roleIdOrName: string): CustomRole {
   return roles.find((r) => r.id === 'viewer') || DEFAULT_ROLES[4];
 }
 
-export function getUserRoleObj(user: AuthorizedUser | null): CustomRole {
-  if (!user) return DEFAULT_ROLES[4]; // Viewer
+export function getUserAllRoleObjs(user: AuthorizedUser | null): CustomRole[] {
+  if (!user) return [DEFAULT_ROLES[6] || DEFAULT_ROLES[4]]; // Viewer
   if (user.email.toLowerCase() === OWNER_EMAIL.toLowerCase() || user.role === 'owner') {
-    return DEFAULT_ROLES[0];
+    return [DEFAULT_ROLES[0]];
   }
-  const roleId = user.customRoleId || user.role;
-  return getRoleById(roleId);
+  const roleIds = new Set<string>();
+  if (Array.isArray(user.customRoleIds) && user.customRoleIds.length > 0) {
+    user.customRoleIds.forEach((id) => {
+      if (id) roleIds.add(id);
+    });
+  }
+  if (user.customRoleId) roleIds.add(user.customRoleId);
+  if (user.role) roleIds.add(user.role);
+
+  if (roleIds.size === 0) return [DEFAULT_ROLES[6] || DEFAULT_ROLES[4]];
+
+  const result: CustomRole[] = [];
+  roleIds.forEach((id) => {
+    result.push(getRoleById(id));
+  });
+  return result.length > 0 ? result : [DEFAULT_ROLES[6] || DEFAULT_ROLES[4]];
+}
+
+export function getUserRoleObj(user: AuthorizedUser | null): CustomRole {
+  const all = getUserAllRoleObjs(user);
+  return all[0] || DEFAULT_ROLES[6] || DEFAULT_ROLES[4];
 }
 
 export function getUserPermissions(user: AuthorizedUser | null): RolePermissions {
@@ -328,6 +400,7 @@ export function getUserPermissions(user: AuthorizedUser | null): RolePermissions
       canEditViolations: false,
       canEditCategories: false,
       canManageStaff: false,
+      canViewStaffDirectory: false,
       canUseCalculator: true,
       canExportDiscord: false,
       canManageUsers: false,
@@ -339,14 +412,23 @@ export function getUserPermissions(user: AuthorizedUser | null): RolePermissions
       canEditViolations: true,
       canEditCategories: true,
       canManageStaff: true,
+      canViewStaffDirectory: true,
       canUseCalculator: true,
       canExportDiscord: true,
       canManageUsers: true,
     };
   }
 
-  const roleObj = getUserRoleObj(user);
-  return roleObj.permissions;
+  const allRoles = getUserAllRoleObjs(user);
+  return {
+    canEditViolations: allRoles.some((r) => r.permissions.canEditViolations),
+    canEditCategories: allRoles.some((r) => r.permissions.canEditCategories),
+    canManageStaff: allRoles.some((r) => r.permissions.canManageStaff),
+    canViewStaffDirectory: allRoles.some((r) => r.permissions.canViewStaffDirectory),
+    canUseCalculator: allRoles.some((r) => r.permissions.canUseCalculator),
+    canExportDiscord: allRoles.some((r) => r.permissions.canExportDiscord),
+    canManageUsers: allRoles.some((r) => r.permissions.canManageUsers),
+  };
 }
 
 export function hasUserPermission(
@@ -399,9 +481,11 @@ export function getUserAuthorityLevel(
 
   const roleObj = getUserRoleObj(user);
   if (roleObj.id === 'owner') level = 1000;
+  else if (roleObj.id === 'commander') level = 850;
   else if (roleObj.id === 'admin') level = 550;
   else if (roleObj.id === 'ban_mod') level = 350;
   else if (roleObj.id === 'editor') level = 250;
+  else if (roleObj.id === 'management') level = 150;
   else if (roleObj.permissions.canManageUsers && roleObj.permissions.canManageStaff) level = 600;
   else if (roleObj.permissions.canManageStaff) level = 450;
   else if (roleObj.permissions.canEditViolations || roleObj.permissions.canEditCategories) level = 250;
@@ -538,6 +622,71 @@ export function canActorManageUserAccount(
   } else {
     return { allowed: false, reason: 'صلاحياتك الإدارية غير كافية لتعديل هذا الحساب.' };
   }
+}
+
+/**
+ * Checks if a user is authorized to manage or review applications for a specific department:
+ * 1. Owner: can manage all
+ * 2. Commander: can manage all
+ * 3. Supervisor / Manager of this department: can manage this department
+ */
+export function canUserManageDepartment(
+  user: AuthorizedUser | null,
+  deptIdOrName: string,
+  staffList?: AdminMember[]
+): { canManage: boolean; isCommanderOrOwner: boolean; isDeptLeader: boolean } {
+  if (!user || !user.isActive) {
+    return { canManage: false, isCommanderOrOwner: false, isDeptLeader: false };
+  }
+
+  if (isOwnerUser(user)) {
+    return { canManage: true, isCommanderOrOwner: true, isDeptLeader: true };
+  }
+
+  const roleId = (user.customRoleId || user.role || '').toLowerCase();
+  if (roleId === 'commander' || roleId === 'owner') {
+    return { canManage: true, isCommanderOrOwner: true, isDeptLeader: true };
+  }
+
+  // Check if user is in staffList as Supervisor or Manager of this department
+  if (staffList && Array.isArray(staffList)) {
+    const uName = (user.name || '').toLowerCase().trim();
+    const uTag = (user.username || '').toLowerCase().trim();
+    const uCode = (user.userCode || '').toLowerCase().trim();
+    const targetDept = (deptIdOrName || '').toLowerCase().trim();
+
+    const staffEntry = staffList.find(
+      (s) =>
+        (s.name && s.name.toLowerCase().trim() === uName) ||
+        (s.discordTag && uTag && s.discordTag.toLowerCase().trim() === uTag) ||
+        (uCode && s.id && s.id.toLowerCase() === uCode) ||
+        (user.id && s.id === user.id)
+    );
+
+    if (staffEntry) {
+      const respName = (staffEntry.responsibilityName || '').toLowerCase();
+      const respId = (staffEntry.responsibilityId || '').toLowerCase();
+      const respRole = (staffEntry.responsibilityRole || '').toLowerCase();
+
+      const matchesDept =
+        respName === targetDept ||
+        respId === targetDept ||
+        targetDept.includes(respName) ||
+        respName.includes(targetDept);
+
+      const isLeaderRole =
+        respRole.includes('manager') ||
+        respRole.includes('supervisor') ||
+        respRole.includes('قائد') ||
+        respRole.includes('مشرف');
+
+      if (matchesDept && isLeaderRole) {
+        return { canManage: true, isCommanderOrOwner: false, isDeptLeader: true };
+      }
+    }
+  }
+
+  return { canManage: false, isCommanderOrOwner: false, isDeptLeader: false };
 }
 
 /**
@@ -1289,9 +1438,13 @@ export function addOrPromoteByUserCode(
 }
 
 /**
- * 1-Click Update User Role
+ * 1-Click Update User Role (with optional multi-role support)
  */
-export function updateUserRole(userId: string, newRole: UserRole | string): boolean {
+export function updateUserRole(
+  userId: string,
+  newRole: UserRole | string,
+  customRoleIds?: string[]
+): boolean {
   const users = loadAuthorizedUsers();
   const user = users.find((u) => u.id === userId);
   if (!user) return false;
@@ -1303,10 +1456,20 @@ export function updateUserRole(userId: string, newRole: UserRole | string): bool
 
   user.role = standardRole;
   user.customRoleId = newRole;
+  if (customRoleIds && Array.isArray(customRoleIds)) {
+    user.customRoleIds = customRoleIds;
+  } else if (!user.customRoleIds || user.customRoleIds.length === 0) {
+    user.customRoleIds = [newRole];
+  } else {
+    // Keep customRoleIds in sync
+    if (!user.customRoleIds.includes(newRole)) {
+      user.customRoleIds = [newRole, ...user.customRoleIds];
+    }
+  }
   saveAuthorizedUsers(users);
 
-  // If demoted to viewer, also remove from staff directory
-  if (newRole === 'viewer') {
+  // If demoted to viewer and has no elevated roles, also remove from staff directory
+  if (newRole === 'viewer' && (!user.customRoleIds || user.customRoleIds.every((r) => r === 'viewer'))) {
     try {
       const savedStaff = localStorage.getItem(LOCAL_STORAGE_STAFF_KEY);
       if (savedStaff) {
@@ -1330,7 +1493,32 @@ export function updateUserRole(userId: string, newRole: UserRole | string): bool
 }
 
 /**
- * Update complete user account details
+ * Assign Multiple Custom Roles to a user (e.g. Management + Ban Moderator)
+ */
+export function setUserMultiRoles(userId: string, roleIds: string[]): boolean {
+  const users = loadAuthorizedUsers();
+  const user = users.find((u) => u.id === userId);
+  if (!user) return false;
+  if (user.email.toLowerCase() === OWNER_EMAIL.toLowerCase()) return false;
+
+  const validRoleIds = roleIds.filter(Boolean);
+  if (validRoleIds.length === 0) {
+    user.customRoleIds = ['viewer'];
+    user.customRoleId = 'viewer';
+    user.role = 'viewer';
+  } else {
+    user.customRoleIds = validRoleIds;
+    user.customRoleId = validRoleIds[0];
+    const hasAdmin = validRoleIds.includes('admin') || validRoleIds.includes('commander');
+    user.role = hasAdmin ? 'admin' : 'editor';
+  }
+
+  saveAuthorizedUsers(users);
+  return true;
+}
+
+/**
+ * Update complete user account details (supports multi-roles)
  */
 export function updateUserAccountDetails(
   userId: string,
@@ -1341,6 +1529,7 @@ export function updateUserAccountDetails(
     age?: string | number;
     userCode?: string;
     role?: string;
+    customRoleIds?: string[];
     isActive?: boolean;
   }
 ): { success: boolean; message: string; user?: AuthorizedUser } {
@@ -1369,7 +1558,14 @@ export function updateUserAccountDetails(
       user.email = details.email.trim().toLowerCase();
     }
   }
-  if (details.role && !isOwnerAccount) {
+  if (details.customRoleIds && Array.isArray(details.customRoleIds) && !isOwnerAccount) {
+    user.customRoleIds = details.customRoleIds;
+    if (details.customRoleIds.length > 0) {
+      user.customRoleId = details.customRoleIds[0];
+      const hasAdmin = details.customRoleIds.includes('admin') || details.customRoleIds.includes('commander');
+      user.role = hasAdmin ? 'admin' : 'editor';
+    }
+  } else if (details.role && !isOwnerAccount) {
     const standardRole: UserRole =
       details.role === 'owner'
         ? 'owner'
@@ -1380,6 +1576,9 @@ export function updateUserAccountDetails(
         : 'editor';
     user.role = standardRole;
     user.customRoleId = details.role;
+    if (!user.customRoleIds || user.customRoleIds.length === 0) {
+      user.customRoleIds = [details.role];
+    }
 
     if (details.role === 'viewer') {
       try {

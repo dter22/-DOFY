@@ -35,7 +35,8 @@ export type UserRole = 'owner' | 'admin' | 'editor' | 'viewer' | string;
 export interface RolePermissions {
   canEditViolations: boolean; // تعديل وإضافة وحذف مخالفات الباند والعقوبات
   canEditCategories: boolean; // إضافة وتعديل وحذف الصناديق والفئات
-  canManageStaff: boolean; // إدارة قائمة أعضاء الإدارة وتعديل النقاط
+  canManageStaff: boolean; // إدارة وتعديل قائمة أعضاء الإدارة والنقاط
+  canViewStaffDirectory?: boolean; // إمكانية مشاهدة وقراءة جدول الإدارة
   canUseCalculator: boolean; // استخدام وتوليد أوامر حاسبة الباند
   canExportDiscord: boolean; // تصدير اللائحة بصيغة الديسكورد
   canManageUsers: boolean; // إدارة المشرفين والصلاحيات
@@ -65,6 +66,7 @@ export interface ActivationRequest {
   submittedAt: string;
   notes?: string;
   assignedRole?: string;
+  assignedRoleIds?: string[];
   reviewedBy?: string;
   reviewedAt?: string;
 }
@@ -79,6 +81,7 @@ export interface AuthorizedUser {
   userCode?: string; // كود العضو الخاص (مثال: MS-8492)
   role: UserRole;
   customRoleId?: string;
+  customRoleIds?: string[]; // قائمة بكافة الرتب والصلاحيات المعينة للشخص
   addedAt: string;
   addedBy: string;
   isActive: boolean;
@@ -94,9 +97,41 @@ export interface AdminMember {
   avatarUrl?: string;
   rank: string;
   rankColor?: string;
+  responsibilityId?: string;
+  responsibilityName?: string;
+  responsibilityRole?: string; // Single responsibility role for backward compatibility
+  responsibilityRoles?: string[]; // Array of multiple assigned responsibilities (e.g. ['Censorship Team', 'Event Supervisor'])
+  responsibilityColor?: string;
+  responsibilityColors?: Record<string, string>;
   points: number;
   status?: 'active' | 'vacation' | 'busy' | 'trainee';
   notes?: string;
   joinDate?: string;
   lastUpdated?: string;
 }
+
+export interface DepartmentApplication {
+  id: string;
+  applicantName: string; // السؤال الأول: اسمك
+  discordId: string; // السؤال الثاني: Copy Id Discord
+  age: string | number; // السؤال الثالث: عمرك
+  responsibilityId: string; // السؤال الرابع: اختيار المسؤولية
+  responsibilityName: string;
+  responsibilityColor?: string;
+  experience?: string; // الخبرات السابقة
+  reason?: string; // سبب التقديم
+  activeHours?: string; // ساعات التواجد اليومية
+  status: 'pending' | 'approved' | 'rejected';
+  submittedAt: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  reviewerNotes?: string;
+}
+
+export interface DepartmentSettings {
+  isOpen: boolean;
+  isRestricted?: boolean; // Censorship Team & Compensation Team are permanently restricted from open recruitment
+  openNote?: string;
+}
+
+export type { ResponsibilityItem, ResponsibilityRole } from './utils/responsibilitiesConfig';

@@ -31,6 +31,10 @@ const ROLES_FILE = path.join(DATA_DIR, 'roles.json');
 const PASSCODE_FILE = path.join(DATA_DIR, 'passcode.json');
 const STAFF_FILE = path.join(DATA_DIR, 'staff.json');
 const CATEGORIES_FILE = path.join(DATA_DIR, 'categories.json');
+const DEPT_SETTINGS_FILE = path.join(DATA_DIR, 'dept_settings.json');
+const DEPT_APPLICATIONS_FILE = path.join(DATA_DIR, 'dept_applications.json');
+const RESPONSIBILITIES_FILE = path.join(DATA_DIR, 'responsibilities.json');
+const SITE_SETTINGS_FILE = path.join(DATA_DIR, 'site_settings.json');
 
 function readJsonFile<T>(filePath: string, fallback: T): T {
   try {
@@ -208,13 +212,85 @@ app.post('/api/categories', (req, res) => {
   res.status(400).json({ success: false, message: 'Expected array of categories' });
 });
 
-// 7. Comprehensive State Endpoint for Remote Syncing (Netlify, External Clients)
+// 7. Department Settings API
+app.get('/api/department-settings', (req, res) => {
+  const settings = readJsonFile(DEPT_SETTINGS_FILE, {});
+  res.json({ success: true, settings });
+});
+
+app.post('/api/department-settings', (req, res) => {
+  const { settings } = req.body;
+  if (settings && typeof settings === 'object') {
+    writeJsonFile(DEPT_SETTINGS_FILE, settings);
+    return res.json({ success: true });
+  }
+  res.status(400).json({ success: false, message: 'Expected settings object' });
+});
+
+// 8. Department Applications API
+app.get('/api/department-applications', (req, res) => {
+  const applications = readJsonFile(DEPT_APPLICATIONS_FILE, []);
+  res.json({ success: true, applications });
+});
+
+app.post('/api/department-applications', (req, res) => {
+  const { applications } = req.body;
+  if (Array.isArray(applications)) {
+    writeJsonFile(DEPT_APPLICATIONS_FILE, applications);
+    return res.json({ success: true, count: applications.length });
+  }
+  res.status(400).json({ success: false, message: 'Expected array of applications' });
+});
+
+// 9. Responsibilities API
+app.get('/api/responsibilities', (req, res) => {
+  const responsibilities = readJsonFile(RESPONSIBILITIES_FILE, []);
+  res.json({ success: true, responsibilities });
+});
+
+app.post('/api/responsibilities', (req, res) => {
+  const { responsibilities } = req.body;
+  if (Array.isArray(responsibilities)) {
+    writeJsonFile(RESPONSIBILITIES_FILE, responsibilities);
+    return res.json({ success: true, count: responsibilities.length });
+  }
+  res.status(400).json({ success: false, message: 'Expected array of responsibilities' });
+});
+
+// 10. Site Settings API (Custom Site Name, etc.)
+app.get('/api/site-settings', (req, res) => {
+  const siteSettings = readJsonFile(SITE_SETTINGS_FILE, {
+    siteTitle: 'Majan Management',
+    siteSubtitle: 'النظام الرسمي للوائح المحاسبة ومخالفات الرول بلاي',
+    serverName: 'سيرفر Majan State',
+  });
+  res.json({ success: true, siteSettings });
+});
+
+app.post('/api/site-settings', (req, res) => {
+  const { siteSettings } = req.body;
+  if (siteSettings && typeof siteSettings === 'object') {
+    writeJsonFile(SITE_SETTINGS_FILE, siteSettings);
+    return res.json({ success: true });
+  }
+  res.status(400).json({ success: false, message: 'Expected siteSettings object' });
+});
+
+// 11. Comprehensive State Endpoint for Remote Syncing (Netlify, External Clients)
 app.get('/api/state-bundle', (req, res) => {
   const users = readJsonFile(USERS_FILE, []);
   const staff = readJsonFile(STAFF_FILE, []);
   const categories = readJsonFile(CATEGORIES_FILE, []);
   const roles = readJsonFile(ROLES_FILE, []);
   const requests = readJsonFile(REQUESTS_FILE, []);
+  const deptSettings = readJsonFile(DEPT_SETTINGS_FILE, {});
+  const deptApplications = readJsonFile(DEPT_APPLICATIONS_FILE, []);
+  const responsibilities = readJsonFile(RESPONSIBILITIES_FILE, []);
+  const siteSettings = readJsonFile(SITE_SETTINGS_FILE, {
+    siteTitle: 'Majan Management',
+    siteSubtitle: 'النظام الرسمي للوائح المحاسبة ومخالفات الرول بلاي',
+    serverName: 'سيرفر Majan State',
+  });
   res.json({
     success: true,
     users,
@@ -222,6 +298,10 @@ app.get('/api/state-bundle', (req, res) => {
     categories,
     roles,
     requests,
+    deptSettings,
+    deptApplications,
+    responsibilities,
+    siteSettings,
     timestamp: new Date().toISOString(),
   });
 });

@@ -16,7 +16,7 @@ import {
   Edit3,
   Lock,
 } from 'lucide-react';
-import { loadCustomRoles, getRoleById } from '../utils/auth';
+import { loadCustomRoles, getRoleById, isOwnerUser } from '../utils/auth';
 
 interface PermissionsModalProps {
   isOpen: boolean;
@@ -302,9 +302,10 @@ export const PermissionsModal: React.FC<PermissionsModalProps> = ({
                     >
                       {customRoles
                         .filter((r) => r.id !== 'owner')
+                        .filter((r) => r.id !== 'commander' || isOwnerUser(currentUser))
                         .map((r) => (
                           <option key={r.id} value={r.id}>
-                            {r.name} ({r.permissions.canEditViolations ? 'تعديل مخالفات الباند' : 'مشاهدة فقط'})
+                            {r.name} {r.id === 'commander' ? '⭐ (قيادة عليا)' : r.id === 'management' ? '📋 (مشاهدة جدول الإدارة)' : r.permissions.canEditViolations ? '(تعديل)' : '(مشاهدة)'}
                           </option>
                         ))}
                     </select>
