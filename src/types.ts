@@ -1,7 +1,13 @@
+export type DurationUnit = 'hours' | 'days' | 'months' | 'perm';
+
 export interface PunishmentTier {
   times: string; // e.g., 'المرة الأولى'
-  penalty: string; // e.g., 'باند اسبوع'
+  penalty: string; // e.g., 'باند اسبوع', '5 ساعات'
+  hours?: number;
   days?: number;
+  months?: number;
+  unit?: DurationUnit;
+  value?: number;
   isPerm?: boolean;
 }
 
@@ -11,6 +17,11 @@ export interface ViolationItem {
   englishTerm?: string;
   description?: string;
   warningNote?: string;
+  penaltyText?: string;
+  durationHours?: number;
+  durationUnit?: DurationUnit;
+  durationValue?: number;
+  isPerm?: boolean;
 }
 
 export interface RuleCategory {

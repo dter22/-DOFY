@@ -430,6 +430,7 @@ export default function App() {
 
           const parsed = parsePenaltyDuration(
             punishment.penalty,
+            punishment.hours,
             punishment.days,
             punishment.isPerm || category?.isAbsolutePerm
           );
@@ -438,14 +439,59 @@ export default function App() {
             ...item,
             occurrenceIndex,
             occurrenceText: punishment.times || `المرة ${occurrenceIndex + 1}`,
-            penaltyText: punishment.penalty,
-            days: parsed.days,
+            penaltyText: parsed.displayText || punishment.penalty,
+            hours: parsed.totalHours,
+            days: Math.ceil(parsed.totalHours / 24),
+            unit: parsed.unit,
+            value: parsed.value,
             isPerm: parsed.isPerm,
           };
         }
         return item;
       })
     );
+  };
+
+  const handleUpdateItemCustomDuration = (
+    id: string,
+    unit: 'hours' | 'days' | 'months' | 'perm',
+    value: number,
+    isPerm: boolean,
+    customText: string
+  ) => {
+    setSelectedBanItems((prev) =>
+      prev.map((item) => {
+        if (item.id === id) {
+          let computedHours = 0;
+          let computedDays = 0;
+          if (isPerm || unit === 'perm') {
+            computedHours = 999999;
+            computedDays = 9999;
+          } else if (unit === 'months') {
+            computedHours = value * 720;
+            computedDays = value * 30;
+          } else if (unit === 'days') {
+            computedHours = value * 24;
+            computedDays = value;
+          } else {
+            computedHours = value;
+            computedDays = Math.ceil(value / 24);
+          }
+
+          return {
+            ...item,
+            penaltyText: customText,
+            hours: computedHours,
+            days: computedDays,
+            unit,
+            value,
+            isPerm: isPerm || unit === 'perm',
+          };
+        }
+        return item;
+      })
+    );
+    showNotification('تم تحديث وتعديل وقت الباند بنجاح');
   };
 
   // Quick click on card violation to toggle/add to calculator
@@ -463,9 +509,10 @@ export default function App() {
     } else {
       const punishment = category.punishments[timesIndex] || category.punishments[0];
       const parsed = parsePenaltyDuration(
-        punishment.penalty,
-        punishment.days,
-        punishment.isPerm || category.isAbsolutePerm
+        violation.penaltyText || punishment?.penalty || '5 ساعات',
+        violation.durationHours || punishment?.hours,
+        punishment?.days,
+        violation.isPerm || punishment?.isPerm || category.isAbsolutePerm
       );
 
       handleAddBanItem({
@@ -474,9 +521,12 @@ export default function App() {
         violationId: violation.id,
         violationName: violation.name,
         occurrenceIndex: timesIndex,
-        occurrenceText: punishment.times || 'المرة الأولى',
-        penaltyText: punishment.penalty,
-        days: parsed.days,
+        occurrenceText: punishment?.times || 'المرة الأولى',
+        penaltyText: parsed.displayText || violation.penaltyText || punishment?.penalty || '5 ساعات',
+        hours: parsed.totalHours,
+        days: Math.ceil(parsed.totalHours / 24),
+        unit: parsed.unit,
+        value: parsed.value,
         isPerm: parsed.isPerm,
       });
     }
@@ -820,10 +870,12 @@ export default function App() {
             <BanSidebarCalculator
               categories={categories}
               selectedItems={selectedBanItems}
+              currentUser={currentUser}
               onRemoveItem={handleRemoveBanItem}
               onClearAll={handleClearAllBans}
               onAddItem={handleAddBanItem}
               onUpdateItemOccurrence={handleUpdateItemOccurrence}
+              onUpdateItemCustomDuration={handleUpdateItemCustomDuration}
             />
           </div>
 
@@ -901,6 +953,7 @@ export default function App() {
         onClearAll={handleClearAllBans}
         onAddItem={handleAddBanItem}
         onUpdateItemOccurrence={handleUpdateItemOccurrence}
+        onUpdateItemCustomDuration={handleUpdateItemCustomDuration}
       />
 
       <DiscordExportModal

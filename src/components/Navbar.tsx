@@ -140,12 +140,31 @@ export const Navbar: React.FC<NavbarProps> = ({
 
             {/* Center Stats Badges & Activation Code Button */}
             <div className="hidden lg:flex items-center gap-2.5">
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#12101b] border border-orange-500/30 text-xs shadow-inner">
+              <button
+                type="button"
+                onClick={() => {
+                  if (isOwner) {
+                    setIsSiteSettingsOpen(true);
+                  }
+                }}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#12101b] border text-xs shadow-inner transition ${
+                  isOwner
+                    ? 'border-orange-500/50 hover:border-orange-400 hover:bg-[#1c162b] cursor-pointer group'
+                    : 'border-orange-500/30 cursor-default'
+                }`}
+                title={isOwner ? 'انقر لتعديل اسم السيرفر والموقع (خاص بك كمالك 👑)' : undefined}
+              >
                 <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse"></span>
                 <span className="font-bold text-white text-xs sm:text-sm">
                   {siteSettings.serverName || 'سيرفر Majan State'}
                 </span>
-              </div>
+                {isOwner && (
+                  <span className="text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 font-bold opacity-80 group-hover:opacity-100 flex items-center gap-1">
+                    <Edit3 className="w-2.5 h-2.5" />
+                    <span>تعديل</span>
+                  </span>
+                )}
+              </button>
               
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#12101b] border border-orange-500/20 text-xs shadow-inner">
                 <span className="text-zinc-400">إجمالي المخالفات:</span>

@@ -24,7 +24,8 @@ export const SiteSettingsModal: React.FC<SiteSettingsModalProps> = ({
   const [serverName, setServerName] = useState(siteSettings.serverName);
   const [isSaved, setIsSaved] = useState(false);
 
-  const isOwner = isOwnerUser(currentUser);
+  const isOwner = !!currentUser && isOwnerUser(currentUser);
+  const isAllowedToEdit = isOwner;
 
   useEffect(() => {
     if (isOpen) {
@@ -39,7 +40,7 @@ export const SiteSettingsModal: React.FC<SiteSettingsModalProps> = ({
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isOwner) return;
+    if (!isAllowedToEdit) return;
 
     const trimmedTitle = siteTitle.trim() || 'Majan Management';
     const trimmedSubtitle = siteSubtitle.trim() || 'النظام الرسمي للوائح المحاسبة ومخالفات الرول بلاي';

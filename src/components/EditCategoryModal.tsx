@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { RuleCategory, ViolationItem, PunishmentTier } from '../types';
-import { X, Save, Plus, Trash2, Edit3, ShieldAlert, ArrowUp, ArrowDown, Clock, CheckCircle2 } from 'lucide-react';
-import { parsePenaltyDuration } from './BanSidebarCalculator';
+import { RuleCategory, ViolationItem, PunishmentTier, DurationUnit } from '../types';
+import { X, Save, Plus, Trash2, Edit3, ShieldAlert, ArrowUp, ArrowDown, Clock, CheckCircle2, Timer, Calendar, Infinity as InfinityIcon } from 'lucide-react';
+import { parsePenaltyDuration } from '../utils/durationHelper';
 
 interface EditCategoryModalProps {
   isOpen: boolean;
@@ -37,10 +37,13 @@ export const EditCategoryModal: React.FC<EditCategoryModalProps> = ({
       setViolations([...category.violations]);
       setPunishments(
         category.punishments.map((p) => {
-          const parsed = parsePenaltyDuration(p.penalty, p.days, p.isPerm);
+          const parsed = parsePenaltyDuration(p.penalty, p.hours, p.days, p.isPerm);
           return {
             ...p,
-            days: typeof p.days === 'number' ? p.days : parsed.days,
+            unit: p.unit || parsed.unit,
+            value: p.value || parsed.value,
+            hours: typeof p.hours === 'number' ? p.hours : parsed.totalHours,
+            days: typeof p.days === 'number' ? p.days : Math.ceil(parsed.totalHours / 24),
             isPerm: p.isPerm ?? parsed.isPerm,
           };
         })
@@ -74,45 +77,113 @@ export const EditCategoryModal: React.FC<EditCategoryModalProps> = ({
     const updated = [...punishments];
     updated[index] = { ...updated[index], [field]: val };
 
-    // If changing penalty text, auto-sync days if not explicitly modified
     if (field === 'penalty') {
       const parsed = parsePenaltyDuration(val);
       if (parsed.isPerm) {
         updated[index].isPerm = true;
+        updated[index].unit = 'perm';
+        updated[index].value = 0;
         updated[index].days = 9999;
+        updated[index].hours = 999999;
       } else {
         updated[index].isPerm = false;
-        updated[index].days = parsed.days;
+        updated[index].unit = parsed.unit;
+        updated[index].value = parsed.value;
+        updated[index].days = Math.ceil(parsed.totalHours / 24);
+        updated[index].hours = parsed.totalHours;
       }
     }
 
     setPunishments(updated);
   };
 
-  const handlePunishmentDaysChange = (index: number, daysVal: number) => {
+  const handleSetPunishmentUnit = (index: number, unit: DurationUnit) => {
     const updated = [...punishments];
-    updated[index] = { ...updated[index], days: daysVal, isPerm: false };
+    const p = updated[index];
+    if (unit === 'perm') {
+      updated[index] = {
+        ...p,
+        unit: 'perm',
+        value: 0,
+        hours: 999999,
+        days: 9999,
+        isPerm: true,
+        penalty: 'باند بيرم (نهائي)',
+      };
+    } else if (unit === 'months') {
+      const val = p.unit === 'months' && p.value ? p.value : 1;
+      updated[index] = {
+        ...p,
+        unit: 'months',
+        value: val,
+        hours: val * 720,
+        days: val * 30,
+        isPerm: false,
+        penalty: val === 1 ? 'باند شهر' : val === 2 ? 'باند شهرين' : `باند ${val} أشهر`,
+      };
+    } else if (unit === 'days') {
+      const val = p.unit === 'days' && p.value ? p.value : (p.days && p.days <= 60 ? p.days : 7);
+      updated[index] = {
+        ...p,
+        unit: 'days',
+        value: val,
+        hours: val * 24,
+        days: val,
+        isPerm: false,
+        penalty: val === 7 ? 'باند أسبوع' : val === 14 ? 'باند أسبوعين' : val === 30 ? 'باند شهر' : val === 1 ? 'باند يوم' : val === 2 ? 'باند يومين' : `باند ${val} أيام`,
+      };
+    } else { // 'hours'
+      const val = p.unit === 'hours' && p.value ? p.value : (p.hours && p.hours <= 72 ? p.hours : 5);
+      updated[index] = {
+        ...p,
+        unit: 'hours',
+        value: val,
+        hours: val,
+        days: Math.ceil(val / 24),
+        isPerm: false,
+        penalty: val === 1 ? 'ساعة واحدة' : val === 2 ? 'ساعتين' : val <= 10 ? `${val} ساعات` : `${val} ساعة`,
+      };
+    }
     setPunishments(updated);
   };
 
-  const handleSetQuickDays = (index: number, days: number) => {
+  const handleSetPunishmentValue = (index: number, val: number) => {
     const updated = [...punishments];
-    updated[index] = {
-      ...updated[index],
-      days,
-      isPerm: false,
-    };
-    setPunishments(updated);
-  };
+    const p = updated[index];
+    const unit = p.unit || (p.isPerm ? 'perm' : (p.hours && p.hours < 24 ? 'hours' : p.days ? 'days' : 'hours'));
+    const safeVal = Math.max(1, isNaN(val) ? 1 : val);
 
-  const handleTogglePerm = (index: number) => {
-    const updated = [...punishments];
-    const currentIsPerm = !!updated[index].isPerm;
-    updated[index] = {
-      ...updated[index],
-      isPerm: !currentIsPerm,
-      days: !currentIsPerm ? 9999 : 7,
-    };
+    if (unit === 'hours') {
+      updated[index] = {
+        ...p,
+        unit: 'hours',
+        value: safeVal,
+        hours: safeVal,
+        days: Math.ceil(safeVal / 24),
+        isPerm: false,
+        penalty: safeVal === 1 ? 'ساعة واحدة' : safeVal === 2 ? 'ساعتين' : safeVal <= 10 ? `${safeVal} ساعات` : `${safeVal} ساعة`,
+      };
+    } else if (unit === 'days') {
+      updated[index] = {
+        ...p,
+        unit: 'days',
+        value: safeVal,
+        hours: safeVal * 24,
+        days: safeVal,
+        isPerm: false,
+        penalty: safeVal === 7 ? 'باند أسبوع' : safeVal === 14 ? 'باند أسبوعين' : safeVal === 30 ? 'باند شهر' : safeVal === 1 ? 'باند يوم' : safeVal === 2 ? 'باند يومين' : `باند ${safeVal} أيام`,
+      };
+    } else if (unit === 'months') {
+      updated[index] = {
+        ...p,
+        unit: 'months',
+        value: safeVal,
+        hours: safeVal * 720,
+        days: safeVal * 30,
+        isPerm: false,
+        penalty: safeVal === 1 ? 'باند شهر' : safeVal === 2 ? 'باند شهرين' : `باند ${safeVal} أشهر`,
+      };
+    }
     setPunishments(updated);
   };
 
@@ -143,6 +214,9 @@ export const EditCategoryModal: React.FC<EditCategoryModalProps> = ({
       times: tierName,
       penalty: defaultPenalty,
       days: defaultDays,
+      hours: defaultDays * 24,
+      unit: newTierIndex >= 4 ? 'perm' : 'days',
+      value: defaultDays,
       isPerm: newTierIndex >= 4,
     };
     setPunishments([...punishments, newTier]);
@@ -377,65 +451,175 @@ export const EditCategoryModal: React.FC<EditCategoryModalProps> = ({
                     )}
                   </div>
 
-                  {/* Row 2: Ban Duration Number for Calculator (المدة بالأيام للحاسبة) */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-800/80 bg-[#0d0a14] p-2.5 rounded-lg">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11px] font-black text-amber-400 flex items-center gap-1">
-                        <Clock className="w-3.5 h-3.5 text-orange-400" />
-                        مدة الباند للحاسبة (بالأيام):
-                      </span>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min="0"
-                          max="3650"
-                          value={p.isPerm ? '' : (p.days ?? 7)}
-                          disabled={p.isPerm}
-                          onChange={(e) => {
-                            const val = parseInt(e.target.value, 10);
-                            handlePunishmentDaysChange(i, isNaN(val) ? 0 : val);
-                          }}
-                          placeholder={p.isPerm ? 'بيرم' : '7'}
-                          className="w-16 bg-[#181424] border border-orange-500/50 focus:border-orange-400 rounded-lg px-2 py-1 text-xs text-center font-black text-amber-400 outline-none disabled:opacity-40"
-                        />
-                        <span className="text-[10px] text-zinc-400 font-bold">يوم</span>
+                  {/* Row 2: Ban Duration Unit Selection & Number (ساعات / أيام / شهور / نهائي) */}
+                  {(() => {
+                    const currentUnit = p.unit || (p.isPerm ? 'perm' : p.hours && p.hours < 24 ? 'hours' : p.days && p.days >= 30 ? 'months' : 'days');
+                    const currentValue = p.value || (currentUnit === 'hours' ? (p.hours || 5) : currentUnit === 'months' ? (p.days ? Math.floor(p.days / 30) : 1) : (p.days || 7));
+
+                    return (
+                      <div className="pt-2 border-t border-zinc-800/80 bg-[#0d0a14] p-3 rounded-xl space-y-2.5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-[11px] font-black text-orange-400 flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-amber-400" />
+                            <span>مدة الباند للحاسبة:</span>
+                          </span>
+
+                          {/* 4 Unit Tabs: ساعات | أيام | شهور | باند نهائي */}
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleSetPunishmentUnit(i, 'hours')}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border flex items-center gap-1 ${
+                                currentUnit === 'hours' && !p.isPerm
+                                  ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-black border-orange-400 shadow-[0_0_10px_rgba(249,115,22,0.4)] font-black'
+                                  : 'bg-[#181326] hover:bg-[#221b36] text-zinc-300 border-zinc-700'
+                              }`}
+                            >
+                              <Timer className="w-3 h-3" />
+                              <span>ساعات</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleSetPunishmentUnit(i, 'days')}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border flex items-center gap-1 ${
+                                currentUnit === 'days' && !p.isPerm
+                                  ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-black border-orange-400 shadow-[0_0_10px_rgba(249,115,22,0.4)] font-black'
+                                  : 'bg-[#181326] hover:bg-[#221b36] text-zinc-300 border-zinc-700'
+                              }`}
+                            >
+                              <Calendar className="w-3 h-3" />
+                              <span>أيام</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleSetPunishmentUnit(i, 'months')}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border flex items-center gap-1 ${
+                                currentUnit === 'months' && !p.isPerm
+                                  ? 'bg-gradient-to-r from-orange-500 to-amber-500 text-black border-orange-400 shadow-[0_0_10px_rgba(249,115,22,0.4)] font-black'
+                                  : 'bg-[#181326] hover:bg-[#221b36] text-zinc-300 border-zinc-700'
+                              }`}
+                            >
+                              <Clock className="w-3 h-3" />
+                              <span>شهور</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleSetPunishmentUnit(i, 'perm')}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border flex items-center gap-1 ${
+                                p.isPerm || currentUnit === 'perm'
+                                  ? 'bg-red-600 text-white border-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)] font-black'
+                                  : 'bg-[#181326] hover:bg-red-500/20 text-zinc-300 border-zinc-700'
+                              }`}
+                            >
+                              <InfinityIcon className="w-3 h-3" />
+                              <span>باند نهائي</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Duration Number Controller (When not permanent) */}
+                        {!p.isPerm && currentUnit !== 'perm' && (
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[11px] text-zinc-400 font-bold">العدد:</span>
+                              <button
+                                type="button"
+                                onClick={() => handleSetPunishmentValue(i, Math.max(1, (currentValue || 1) - 1))}
+                                className="w-7 h-7 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white font-bold flex items-center justify-center cursor-pointer"
+                              >
+                                -
+                              </button>
+                              <input
+                                type="number"
+                                min="1"
+                                max={currentUnit === 'hours' ? 720 : currentUnit === 'days' ? 365 : 24}
+                                value={currentValue || 1}
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value, 10);
+                                  handleSetPunishmentValue(i, isNaN(val) ? 1 : val);
+                                }}
+                                className="w-16 h-7 bg-[#141020] border border-orange-500/50 focus:border-orange-400 rounded-lg text-center text-xs font-black text-amber-400 outline-none"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleSetPunishmentValue(i, (currentValue || 1) + 1)}
+                                className="w-7 h-7 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white font-bold flex items-center justify-center cursor-pointer"
+                              >
+                                +
+                              </button>
+                              <span className="text-xs text-orange-300 font-bold min-w-10">
+                                {currentUnit === 'hours'
+                                  ? currentValue === 1 ? 'ساعة' : currentValue === 2 ? 'ساعتين' : currentValue <= 10 ? 'ساعات' : 'ساعة'
+                                  : currentUnit === 'days'
+                                  ? currentValue === 1 ? 'يوم' : currentValue === 2 ? 'يومين' : currentValue <= 10 ? 'أيام' : 'يوم'
+                                  : currentValue === 1 ? 'شهر' : currentValue === 2 ? 'شهرين' : `${currentValue} أشهر`}
+                              </span>
+                            </div>
+
+                            {/* Preset values for the selected unit */}
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {currentUnit === 'hours' &&
+                                [1, 2, 3, 5, 7, 12, 24].map((h) => (
+                                  <button
+                                    key={h}
+                                    type="button"
+                                    onClick={() => handleSetPunishmentValue(i, h)}
+                                    className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition cursor-pointer ${
+                                      currentValue === h
+                                        ? 'bg-orange-500 text-black border-orange-400 font-black'
+                                        : 'bg-[#1a142c] hover:bg-zinc-800 text-zinc-300 border-zinc-700'
+                                    }`}
+                                  >
+                                    {h}س
+                                  </button>
+                                ))}
+
+                              {currentUnit === 'days' &&
+                                [1, 2, 3, 7, 14, 30].map((d) => (
+                                  <button
+                                    key={d}
+                                    type="button"
+                                    onClick={() => handleSetPunishmentValue(i, d)}
+                                    className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition cursor-pointer ${
+                                      currentValue === d
+                                        ? 'bg-orange-500 text-black border-orange-400 font-black'
+                                        : 'bg-[#1a142c] hover:bg-zinc-800 text-zinc-300 border-zinc-700'
+                                    }`}
+                                  >
+                                    {d === 7 ? 'أسبوع' : d === 14 ? 'أسبوعين' : d === 30 ? 'شهر' : `${d}ي`}
+                                  </button>
+                                ))}
+
+                              {currentUnit === 'months' &&
+                                [1, 2, 3, 6].map((m) => (
+                                  <button
+                                    key={m}
+                                    type="button"
+                                    onClick={() => handleSetPunishmentValue(i, m)}
+                                    className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition cursor-pointer ${
+                                      currentValue === m
+                                        ? 'bg-orange-500 text-black border-orange-400 font-black'
+                                        : 'bg-[#1a142c] hover:bg-zinc-800 text-zinc-300 border-zinc-700'
+                                    }`}
+                                  >
+                                    {m === 1 ? 'شهر' : m === 2 ? 'شهرين' : `${m} شهور`}
+                                  </button>
+                                ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {p.isPerm && (
+                          <div className="text-[11px] font-bold text-red-400 bg-red-950/30 border border-red-500/30 rounded-lg p-1.5 text-center">
+                            ⛔ حظر دائم وغير محدد المدة (أمر: /ban [ID] 0)
+                          </div>
+                        )}
                       </div>
-                    </div>
-
-                    {/* Quick Presets & Perm toggle */}
-                    <div className="flex items-center gap-1">
-                      <span className="text-[10px] text-zinc-500 hidden sm:inline">خيارات سريعة:</span>
-                      {[3, 7, 14, 30].map((d) => (
-                        <button
-                          key={d}
-                          type="button"
-                          onClick={() => handleSetQuickDays(i, d)}
-                          className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition cursor-pointer ${
-                            !p.isPerm && p.days === d
-                              ? 'bg-orange-500 text-black border-orange-400 font-black shadow-[0_0_8px_rgba(249,115,22,0.4)]'
-                              : 'bg-[#1e192c] hover:bg-zinc-800 text-zinc-300 border-zinc-700'
-                          }`}
-                          title={`تحديد ${d} أيام للحاسبة`}
-                        >
-                          {d}ي
-                        </button>
-                      ))}
-
-                      {/* Permanent Toggle Button */}
-                      <button
-                        type="button"
-                        onClick={() => handleTogglePerm(i)}
-                        className={`px-2.5 py-0.5 rounded-md text-[10px] font-black border transition cursor-pointer ${
-                          p.isPerm
-                            ? 'bg-red-600 text-white border-red-500 shadow-[0_0_10px_rgba(220,38,38,0.5)]'
-                            : 'bg-[#1e192c] hover:bg-red-500/20 text-zinc-400 hover:text-red-300 border-zinc-700'
-                        }`}
-                        title="تفعيل الباند الدائم (بيرم) في الحاسبة"
-                      >
-                        {p.isPerm ? '✓ دائم (بيرم)' : 'دائم (بيرم)'}
-                      </button>
-                    </div>
-                  </div>
+                    );
+                  })()}
                 </div>
               ))}
             </div>
