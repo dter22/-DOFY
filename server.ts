@@ -257,12 +257,14 @@ app.post('/api/responsibilities', (req, res) => {
   res.status(400).json({ success: false, message: 'Expected array of responsibilities' });
 });
 
-// 10. Site Settings API (Custom Site Name, etc.)
+// 10. Site Settings API (Custom Site Name, Logo, Tab Title, etc.)
 app.get('/api/site-settings', (req, res) => {
   const siteSettings = readJsonFile(SITE_SETTINGS_FILE, {
-    siteTitle: 'Majan Management',
+    siteTitle: 'Server Rival',
     siteSubtitle: 'النظام الرسمي للوائح المحاسبة ومخالفات الرول بلاي',
-    serverName: 'سيرفر Majan State',
+    serverName: 'سيرفر Rival',
+    browserTabTitle: 'قوانين المخالفات',
+    logoUrl: '',
   });
   res.json({ success: true, siteSettings });
 });

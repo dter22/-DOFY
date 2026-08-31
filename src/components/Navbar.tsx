@@ -96,18 +96,34 @@ export const Navbar: React.FC<NavbarProps> = ({
             
             {/* Logo & Title */}
             <div className="flex items-center gap-3 shrink-0">
-              <div className="w-11 sm:w-12 h-11 sm:h-12 rounded-full ring-2 ring-orange-500/60 shadow-[0_0_25px_rgba(249,115,22,0.5)] overflow-hidden bg-black flex items-center justify-center shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  if (isOwner) {
+                    setIsSiteSettingsOpen(true);
+                  }
+                }}
+                className={`relative w-11 sm:w-12 h-11 sm:h-12 rounded-full ring-2 ring-orange-500/60 shadow-[0_0_25px_rgba(249,115,22,0.5)] overflow-hidden bg-black flex items-center justify-center shrink-0 group ${
+                  isOwner ? 'cursor-pointer hover:ring-amber-400' : 'cursor-default'
+                }`}
+                title={isOwner ? 'انقر لتغيير صورة وشعار السيرفر والاسم (خاص بالمالك 👑)' : undefined}
+              >
                 <img
-                  src={serverLogo}
-                  alt="Majan Logo"
+                  src={siteSettings.logoUrl || serverLogo}
+                  alt="Server Logo"
                   referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
-              </div>
+                {isOwner && (
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                    <Edit3 className="w-4 h-4 text-amber-400" />
+                  </div>
+                )}
+              </button>
               <div>
                 <div className="flex items-center gap-2">
                   <h1 className="text-lg sm:text-2xl font-black tracking-tight text-white font-['Cairo'] flex items-center gap-1.5">
-                    <span>{siteSettings.siteTitle || 'Majan Management'}</span>
+                    <span>{siteSettings.siteTitle || 'Server Rival'}</span>
                   </h1>
 
                   {/* Owner Rename Trigger */}
@@ -116,7 +132,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                       type="button"
                       onClick={() => setIsSiteSettingsOpen(true)}
                       className="p-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/30 text-amber-400 border border-amber-500/40 transition cursor-pointer"
-                      title="تعديل اسم الموقع (خاص بالمالك فقط)"
+                      title="تعديل اسم وشعار الموقع (خاص بالمالك فقط)"
                     >
                       <Edit3 className="w-3.5 h-3.5" />
                     </button>
@@ -156,7 +172,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)] animate-pulse"></span>
                 <span className="font-bold text-white text-xs sm:text-sm">
-                  {siteSettings.serverName || 'سيرفر Majan State'}
+                  {siteSettings.serverName || 'سيرفر Rival'}
                 </span>
                 {isOwner && (
                   <span className="text-[10px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/30 font-bold opacity-80 group-hover:opacity-100 flex items-center gap-1">

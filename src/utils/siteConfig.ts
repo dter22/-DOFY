@@ -5,15 +5,19 @@ export interface SiteSettings {
   siteTitle: string;
   siteSubtitle: string;
   serverName: string;
+  browserTabTitle: string;
+  logoUrl?: string;
 }
 
 export const DEFAULT_SITE_SETTINGS: SiteSettings = {
-  siteTitle: 'Majan Management',
+  siteTitle: 'Server Rival',
   siteSubtitle: 'النظام الرسمي للوائح المحاسبة ومخالفات الرول بلاي',
-  serverName: 'سيرفر Majan State',
+  serverName: 'سيرفر Rival',
+  browserTabTitle: 'قوانين المخالفات',
+  logoUrl: '',
 };
 
-const LOCAL_STORAGE_SITE_SETTINGS_KEY = 'server_site_settings_v2';
+const LOCAL_STORAGE_SITE_SETTINGS_KEY = 'server_site_settings_v3';
 
 export function loadSavedSiteSettings(): SiteSettings {
   try {
@@ -36,7 +40,15 @@ export function saveSiteSettingsToStorage(settings: SiteSettings): void {
     localStorage.setItem(LOCAL_STORAGE_SITE_SETTINGS_KEY, JSON.stringify(settings));
     // Also broadcast change to update document title
     if (typeof document !== 'undefined') {
-      document.title = `${settings.siteTitle} - ${settings.serverName}`;
+      document.title = settings.browserTabTitle || 'قوانين المخالفات';
+      
+      // Update favicon if custom logoUrl is provided
+      if (settings.logoUrl) {
+        const iconLinks = document.querySelectorAll("link[rel*='icon']");
+        iconLinks.forEach((link) => {
+          (link as HTMLLinkElement).href = settings.logoUrl || '/majan_logo.jpg';
+        });
+      }
     }
     // Async push to server
     fetch('/api/site-settings', {

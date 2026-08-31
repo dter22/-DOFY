@@ -193,11 +193,25 @@ export default function App() {
   // Site Branding & Settings
   const [siteSettings, setSiteSettings] = useState<SiteSettings>(() => loadSavedSiteSettings());
 
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.title = siteSettings.browserTabTitle || 'قوانين المخالفات';
+      if (siteSettings.logoUrl) {
+        const iconLinks = document.querySelectorAll("link[rel*='icon']");
+        iconLinks.forEach((link) => {
+          (link as HTMLLinkElement).href = siteSettings.logoUrl || '/majan_logo.jpg';
+        });
+      }
+    }
+  }, [siteSettings.browserTabTitle, siteSettings.logoUrl]);
+
   const handleUpdateSiteSettings = (newSettings: SiteSettings) => {
     setSiteSettings(newSettings);
     saveSiteSettingsToStorage(newSettings);
-    document.title = `${newSettings.siteTitle} | ${newSettings.serverName}`;
-    showNotification('تم تحديث هوية وإعدادات الموقع بنجاح');
+    if (typeof document !== 'undefined') {
+      document.title = newSettings.browserTabTitle || 'قوانين المخالفات';
+    }
+    showNotification('تم تحديث هوية وإعدادات وشعار الموقع بنجاح');
   };
 
   // Modals
